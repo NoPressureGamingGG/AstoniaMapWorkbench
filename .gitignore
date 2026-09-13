@@ -1,0 +1,10 @@
+bin/
+obj/
+published/
+*.user
+*.suo
+*.userprefs
+*.mapregion.json
+*.json.bak
+*.tmp
+*.bak
