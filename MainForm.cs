@@ -120,13 +120,14 @@ internal sealed class MainForm : Form
         var mapPage = new TabPage("Map canvas");
         var scroll = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(18, 20, 24) }; scroll.Controls.Add(canvas);
         var mapLayout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2 }; mapLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); mapLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        mapLayout.Controls.Add(new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Controls = { new Label { Text = "Isometric zoom" }, zoom, collisionOverlay, gridOverlay, wallsOverlay, lowerWalls, charactersOverlay, freeDraw, new Label { Text = "Ctrl-drag paints a preview when Free draw is enabled." } } }, 0, 0); mapLayout.Controls.Add(scroll, 0, 1); mapPage.Controls.Add(mapLayout);
+        mapLayout.Controls.Add(new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Controls = { new Label { Text = "Isometric zoom" }, zoom, collisionOverlay, gridOverlay, wallsOverlay, lowerWalls, charactersOverlay, new Label { Text = "Left-drag to pan." } } }, 0, 0); mapLayout.Controls.Add(scroll, 0, 1); mapPage.Controls.Add(mapLayout);
         centerTabs.TabPages.Add(mapPage); centerTabs.TabPages.Add(Tab("Search results", results));
         results.SelectedIndexChanged += (_, _) => { if (results.SelectedItem is Result r) SelectTile(r.Tile.X, r.Tile.Y); };
         templates.SelectedIndexChanged += (_, _) => ApplyTemplateSelection();
         templates.DoubleClick += (_, _) => rightTabs.SelectedIndex = 0;
         spriteWorkspace.SelectedIndexChanged += (_, _) => { if (spriteWorkspace.SelectedItem is uint sprite) SelectPaletteSprite(sprite); ShowSpriteIds(spriteWorkspaceIds); };
         recentSprites.SelectedIndexChanged += (_, _) => { if (recentSprites.SelectedItem is uint sprite) SelectPaletteSprite(sprite); ShowSpriteIds(recentSpriteIds); };
+        spriteBrowserTarget.SelectedIndexChanged += (_, _) => { if (selectedBrowserSprite is not null) UseBrowserSprite(false); };
         spriteWorkspace.DragEnter += (_, e) => e.Effect = e.Data?.GetDataPresent(DataFormats.Text) == true ? DragDropEffects.Copy : DragDropEffects.None;
         spriteWorkspace.DragDrop += (_, e) => { if (uint.TryParse(e.Data?.GetData(DataFormats.Text)?.ToString(), out var sprite)) AddSpriteToWorkspace(sprite); };
 
@@ -167,9 +168,10 @@ internal sealed class MainForm : Form
         browse.Click += (_, _) => BrowseSprites();
         spriteBrowserSource.Items.AddRange(["Archive ID/range", "Map Ground 1", "Map Ground 2"]); spriteBrowserSource.SelectedIndex = 0;
         spriteBrowserTarget.Items.AddRange(["Ground layer 1", "Ground layer 2", "Wall / ceiling layer 1", "Wall / ceiling layer 2"]); spriteBrowserTarget.SelectedIndex = 0;
-        var use = new Button { Text = "Use selected sprite", AutoSize = true }; use.Click += (_, _) => UseBrowserSprite();
+        var use = new Button { Text = "Use selected sprite", AutoSize = true }; use.Click += (_, _) => UseBrowserSprite(false);
+        var applyBrowser = new Button { Text = "Apply preview", AutoSize = true }; applyBrowser.Click += (_, _) => ApplyEdit();
         var controls = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(2) };
-        controls.Controls.Add(rangeLabel); controls.Controls.Add(spriteBrowserRange); controls.Controls.Add(browse); controls.Controls.Add(spriteBrowserSource); controls.Controls.Add(spriteBrowserTarget); controls.Controls.Add(use);
+        controls.Controls.Add(rangeLabel); controls.Controls.Add(spriteBrowserRange); controls.Controls.Add(browse); controls.Controls.Add(spriteBrowserSource); controls.Controls.Add(new Label { Text = "Place on:", AutoSize = true, Padding = new Padding(6, 6, 0, 0) }); controls.Controls.Add(spriteBrowserTarget); controls.Controls.Add(freeDraw); controls.Controls.Add(use); controls.Controls.Add(applyBrowser);
         var groupButtons = new FlowLayoutPanel { AutoSize = true, Controls = { new Label { Text = "Working group: drag thumbnails here", AutoSize = true }, spriteWorkspace, Button("Add selected", (_, _) => { if (selectedBrowserSprite is { } sprite) AddSpriteToWorkspace(sprite); }), Button("Use group sprite", (_, _) => { if (spriteWorkspace.SelectedItem is uint sprite) SelectBrowserSprite(sprite); }) } };
         var recentBar = new FlowLayoutPanel { AutoSize = true, Controls = { new Label { Text = "Recent 5:", AutoSize = true }, recentSprites } };
         panel.Controls.Add(controls, 0, 0); panel.Controls.Add(groupButtons, 0, 1); panel.Controls.Add(recentBar, 0, 2); panel.Controls.Add(spriteGallery, 0, 3);
@@ -603,18 +605,25 @@ internal sealed class MainForm : Form
             var label = new Label { Text = id.ToString(), Dock = DockStyle.Bottom, ForeColor = Color.White, TextAlign = ContentAlignment.MiddleCenter, Height = 24 };
             preview.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left) preview.DoDragDrop(id.ToString(), DragDropEffects.Copy); };
             preview.Click += (_, _) => SelectBrowserSprite((uint)id);
-            preview.DoubleClick += (_, _) => rightTabs.SelectedIndex = 0;
+            preview.DoubleClick += (_, _) => SelectBrowserSprite((uint)id);
             tile.Controls.Add(preview); tile.Controls.Add(label); spriteGallery.Controls.Add(tile);
         }
         if (spriteGallery.Controls.Count == 0) spriteGallery.Controls.Add(new Label { Text = "No sprites decoded in that range.", ForeColor = Color.White, AutoSize = true });
+        if (selectedBrowserSprite is { } selected) HighlightBrowserSprite(selected);
     }
     private void SelectPaletteSprite(uint sprite)
     {
         selectedBrowserSprite = sprite;
+        HighlightBrowserSprite(sprite);
+        UseBrowserSprite(false);
         status.Text = $"Sprite {sprite} selected from your palette. Choose a target layer, then Use selected sprite.";
     }
-    private void SelectBrowserSprite(uint sprite) { selectedBrowserSprite = sprite; AddRecentSprite(sprite); UseBrowserSprite(); status.Text = $"Sprite {sprite} selected for {spriteBrowserTarget.SelectedItem}. Click the map to preview-place it, then Apply to commit."; }
-    private void UseBrowserSprite()
+    private void SelectBrowserSprite(uint sprite) { selectedBrowserSprite = sprite; AddRecentSprite(sprite); HighlightBrowserSprite(sprite); UseBrowserSprite(false); status.Text = $"Sprite {sprite} selected for {spriteBrowserTarget.SelectedItem}. Paint directly on the map, then Apply to commit."; }
+    private void HighlightBrowserSprite(uint sprite)
+    {
+        foreach (Control control in spriteGallery.Controls) if (control is Panel panel) panel.BackColor = panel.Tag is uint id && id == sprite ? Color.FromArgb(190, 150, 45) : Color.FromArgb(34, 36, 42);
+    }
+    private void UseBrowserSprite(bool returnToEditor = true)
     {
         if (selectedBrowserSprite is not { } sprite) return;
         var target = spriteBrowserTarget.SelectedIndex;
@@ -622,7 +631,7 @@ internal sealed class MainForm : Form
         else if (target == 1) { gs2.Value = sprite; paintScope.SelectedIndex = 2; }
         else if (target == 2) { fs1.Value = sprite; paintScope.SelectedIndex = 3; }
         else { fs2.Value = sprite; paintScope.SelectedIndex = 4; }
-        rightTabs.SelectedIndex = 0;
+        if (returnToEditor) rightTabs.SelectedIndex = 0;
         placeSpriteMode.Checked = true;
     }
 

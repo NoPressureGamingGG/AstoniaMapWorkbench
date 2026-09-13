@@ -11,6 +11,7 @@
 - Fix Free Draw rectangle selection overwriting the chosen brush with the sprite from the drag-start tile.
 - Add persistent Working group and Recent 5 sprite lists, thumbnail drag/drop, and click-to-place previews for the selected layer.
 - Repopulate the Sprite Browser gallery when Working group or Recent 5 is selected, and wrap the browser toolbar on narrow panels.
+- Keep sprite selection, layer choice, Free draw, and Apply preview together in the Sprite Browser tab with highlighted thumbnails.
 - Fix Ctrl-drag selections outside the map bounds causing a NumericUpDown crash from negative coordinates.
 
 - Render map ground and foreground layers from the read-only legacy Astonia `.pak` sprite archive.

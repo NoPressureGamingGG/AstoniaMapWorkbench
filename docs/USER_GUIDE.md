@@ -172,6 +172,8 @@ The browser keeps a persistent **Working group** and **Recent 5** list in `%LOCA
 
 Selecting a sprite also enables **Click-to-place preview**. Click a map tile to preview the sprite there on the chosen layer, then use **Apply tile / rectangle** to commit it. Normal click placement is preview-only until Apply; Ctrl-drag and Shift-click remain available for selection workflows.
 
+The Sprite Browser itself contains the full workflow: select a highlighted thumbnail, choose the placement layer, enable **Free draw preview**, paint by Ctrl-drag or click, and use **Apply preview** without switching to Tile editor. The Tile editor remains available as a separate tab.
+
 ### Free draw preview
 
 Enable **Free draw preview**, choose a sprite and placement layer, then Ctrl-drag across the map. The selected squares show the proposed sprite immediately, but the map is not changed until **Apply tile / rectangle** is confirmed. Each painted tile receives its own undo entry, so Ctrl+Z can step backward tile by tile. Turning Free draw off restores ordinary Ctrl-drag region selection.
