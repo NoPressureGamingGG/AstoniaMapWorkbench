@@ -26,4 +26,6 @@ git push
 
 GitHub Actions then builds every push and pull request. Open an Issue for feedback and reference the issue in the commit or pull request when applicable.
 
+The repository now follows the completed-and-tested rule described in [DEVELOPMENT.md](DEVELOPMENT.md). Push only after the Release build and the relevant Workbench behavior check pass.
+
 Do not commit `bin/`, `obj/`, maps copied from a private deployment, credentials, runtime logs, database dumps, or proprietary client/server assets.
