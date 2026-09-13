@@ -438,7 +438,8 @@ internal sealed class MainForm : Form
             foreach (var state in before) ApplyValues(map!.GetTile(state.X, state.Y));
             var change = new TileChange(before, before.Select(state => TileSnapshot.Capture(map!.GetTile(state.X, state.Y))).ToList()); undoStack.Push(change);
         }
-        freeDrawTiles.Clear(); canvas.ClearPreview(); canvas.RefreshTile(); ShowDetails(map!.GetTile((int)x.Value, (int)y.Value)); UpdateStatus();
+        var committedTiles = targets.Length;
+        freeDrawTiles.Clear(); canvas.ClearPreview(); canvas.RefreshTile(); ShowDetails(map!.GetTile((int)x.Value, (int)y.Value)); status.Text = $"Committed {committedTiles:N0} Free Draw tile(s)."; UpdateStatus();
     }
 
     private void PreviewEdit()
@@ -473,8 +474,8 @@ internal sealed class MainForm : Form
 
     private void PreviewFreeDraw()
     {
-        if (!RequireMap() || selectedTiles.Count == 0) return;
-        canvas.SetPreview(PreviewMaps(selectedTiles));
+        if (!RequireMap() || freeDrawTiles.Count == 0) return;
+        canvas.SetPreview(PreviewMaps(freeDrawTiles));
     }
 
     private IEnumerable<MapTile> PreviewMaps(IEnumerable<Point> targets)
