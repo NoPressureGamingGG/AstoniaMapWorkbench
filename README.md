@@ -18,6 +18,8 @@ dotnet build AstoniaMapWorkbench.csproj --configuration Release
 
 Output: `bin/Release/net9.0-windows/AstoniaMapWorkbench.exe`
 
+For testers, use the GitHub Actions artifact or a GitHub Release marked `win-x64`. Those builds are self-contained and include the .NET runtime; testers do not need to install .NET 9 separately. Unzip the package and launch `AstoniaMapWorkbench.exe`.
+
 ## Safety boundary
 
 The Workbench does not connect to an area server, upload maps, restart processes, or modify a canonical Server checkout automatically. Review the generated map diff, promote it through the server project's normal workflow, restart the affected area, and test in staging.

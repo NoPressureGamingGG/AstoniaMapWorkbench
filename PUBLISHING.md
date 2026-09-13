@@ -28,4 +28,14 @@ GitHub Actions then builds every push and pull request. Open an Issue for feedba
 
 The repository now follows the completed-and-tested rule described in [DEVELOPMENT.md](DEVELOPMENT.md). Push only after the Release build and the relevant Workbench behavior check pass.
 
+## Standalone tester build
+
+The GitHub Actions workflow also runs:
+
+```powershell
+dotnet publish AstoniaMapWorkbench.csproj --configuration Release --runtime win-x64 --self-contained true --output publish/win-x64
+```
+
+The uploaded `AstoniaMapWorkbench-win-x64` artifact contains the .NET runtime and can run on a compatible 64-bit Windows machine without a separate .NET 9 installation. For public testing, download the artifact from the workflow or attach the same `publish/win-x64` contents to a tagged GitHub Release.
+
 Do not commit `bin/`, `obj/`, maps copied from a private deployment, credentials, runtime logs, database dumps, or proprietary client/server assets.
