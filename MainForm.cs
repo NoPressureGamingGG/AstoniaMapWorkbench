@@ -427,16 +427,18 @@ internal sealed class MainForm : Form
         redoStack.Clear();
         if (freeDraw.Checked && before.Count > 1)
         {
-            foreach (var state in before)
+            for (var index = 0; index < before.Count; index++)
             {
-                ApplyValues(map!.GetTile(state.X, state.Y));
-                undoStack.Push(new TileChange([state], [TileSnapshot.Capture(map.GetTile(state.X, state.Y))]));
+                var state = before[index];
+                var target = map!.GetTile(state.X, state.Y);
+                after[index].Restore(target);
+                undoStack.Push(new TileChange([state], [after[index]]));
             }
         }
         else
         {
-            foreach (var state in before) ApplyValues(map!.GetTile(state.X, state.Y));
-            var change = new TileChange(before, before.Select(state => TileSnapshot.Capture(map!.GetTile(state.X, state.Y))).ToList()); undoStack.Push(change);
+            for (var index = 0; index < before.Count; index++) after[index].Restore(map!.GetTile(before[index].X, before[index].Y));
+            undoStack.Push(new TileChange(before, after));
         }
         var committedTiles = targets.Length;
         freeDrawTiles.Clear(); canvas.ClearPreview(); canvas.RefreshTile(); ShowDetails(map!.GetTile((int)x.Value, (int)y.Value)); status.Text = $"Committed {committedTiles:N0} Free Draw tile(s)."; UpdateStatus();
@@ -482,13 +484,6 @@ internal sealed class MainForm : Form
 
     private IEnumerable<MapTile> PreviewMaps(IEnumerable<Point> targets)
     {
-
-    private void AddFreeDrawTiles(IEnumerable<Point> tiles)
-    {
-        if (!RequireMap()) return;
-        foreach (var tile in tiles) freeDrawTiles.Add(ClampMapPoint(tile));
-        PreviewFreeDraw();
-    }
         return targets.Select(point =>
         {
             var source = map!.GetTile(point.X, point.Y);
@@ -497,6 +492,13 @@ internal sealed class MainForm : Form
             ApplyValues(copy);
             return copy;
         });
+    }
+
+    private void AddFreeDrawTiles(IEnumerable<Point> tiles)
+    {
+        if (!RequireMap()) return;
+        foreach (var tile in tiles) freeDrawTiles.Add(ClampMapPoint(tile));
+        PreviewFreeDraw();
     }
 
     private string BuildChangeSummary(IReadOnlyList<TileSnapshot> before, IReadOnlyList<TileSnapshot> after, int targetCount)
