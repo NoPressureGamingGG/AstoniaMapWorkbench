@@ -206,10 +206,13 @@ internal sealed class MainForm : Form
 
     private void SelectSection(Point anchor, Point tile)
     {
+        anchor = ClampMapPoint(anchor); tile = ClampMapPoint(tile);
         var minX = Math.Min(anchor.X, tile.X); var maxX = Math.Max(anchor.X, tile.X);
         var minY = Math.Min(anchor.Y, tile.Y); var maxY = Math.Max(anchor.Y, tile.Y);
         SelectTiles(Enumerable.Range(minY, maxY - minY + 1).SelectMany(row => Enumerable.Range(minX, maxX - minX + 1).Select(column => new Point(column, row))), "section");
     }
+
+    private static Point ClampMapPoint(Point point) => new(Math.Clamp(point.X, 0, 255), Math.Clamp(point.Y, 0, 255));
 
     private void SelectMatchingSprite(Point tilePoint)
     {
@@ -225,7 +228,7 @@ internal sealed class MainForm : Form
 
     private void SelectTiles(IEnumerable<Point> tiles, string kind)
     {
-        selectedTiles.Clear(); selectedTiles.UnionWith(tiles);
+        selectedTiles.Clear(); selectedTiles.UnionWith(tiles.Select(ClampMapPoint));
         if (selectedTiles.Count == 0) return;
         var minX = selectedTiles.Min(tile => tile.X); var maxX = selectedTiles.Max(tile => tile.X);
         var minY = selectedTiles.Min(tile => tile.Y); var maxY = selectedTiles.Max(tile => tile.Y);
