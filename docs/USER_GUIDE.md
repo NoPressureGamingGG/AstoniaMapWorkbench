@@ -170,7 +170,7 @@ Use the browser source selector to browse an Archive ID/range or the sprites cur
 
 The browser keeps a persistent **Working group** and **Recent 5** list in `%LOCALAPPDATA%/AstoniaMapWorkbench/sprite-workspace.json`. Drag a thumbnail into Working group, or use **Add selected**. Select a group/recent sprite to reuse it without searching again.
 
-Selecting a sprite also enables **Click-to-place preview**. Click a map tile to preview the sprite there on the chosen layer, then use **Apply tile / rectangle** to commit it. Normal click placement is preview-only until Apply; Ctrl-drag and Shift-click remain available for selection workflows.
+Selecting a sprite also enables **Click-to-place preview**. Click multiple map tiles and/or Ctrl-drag multiple rectangles to accumulate one continuous pending brush stroke. The sprite remains previewed in every chosen square until **Apply tile / rectangle** commits it. Normal click placement is preview-only until Apply; Ctrl-drag and Shift-click remain available for selection workflows.
 
 The Sprite Browser itself contains the full workflow: select a highlighted thumbnail, choose the placement layer, enable **Free draw preview**, paint by Ctrl-drag or click, and use **Apply preview** without switching to Tile editor. The Tile editor remains available as a separate tab.
 

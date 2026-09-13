@@ -10,6 +10,7 @@
 - Fix Free Draw and click-to-place previews not repainting the canvas after their temporary tile state changed.
 - Fix Free Draw rectangle selection overwriting the chosen brush with the sprite from the drag-start tile.
 - Fix Free Draw preview reading the ordinary selection instead of the accumulated stroke, and report committed tile count.
+- Keep browser click-to-place and Free Draw previews persistent across multiple clicks and rectangle sweeps until Apply.
 - Add persistent Working group and Recent 5 sprite lists, thumbnail drag/drop, and click-to-place previews for the selected layer.
 - Repopulate the Sprite Browser gallery when Working group or Recent 5 is selected, and wrap the browser toolbar on narrow panels.
 - Keep sprite selection, layer choice, Free draw, and Apply preview together in the Sprite Browser tab with highlighted thumbnails.

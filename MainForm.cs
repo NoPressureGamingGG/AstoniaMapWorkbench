@@ -78,7 +78,7 @@ internal sealed class MainForm : Form
         wallsOverlay.CheckedChanged += (_, _) => { canvas.ShowWalls = wallsOverlay.Checked; canvas.RefreshTile(); };
         charactersOverlay.CheckedChanged += (_, _) => { canvas.ShowCharacters = charactersOverlay.Checked; canvas.RefreshTile(); };
         lowerWalls.CheckedChanged += (_, _) => { canvas.LowerWalls = lowerWalls.Checked; canvas.RefreshTile(); };
-        freeDraw.CheckedChanged += (_, _) => { if (freeDraw.Checked) PreviewFreeDraw(); else { freeDrawTiles.Clear(); canvas.ClearPreview(); } };
+        freeDraw.CheckedChanged += (_, _) => { if (BrushPreviewActive()) PreviewFreeDraw(); else { freeDrawTiles.Clear(); canvas.ClearPreview(); } };
         apply.Click += (_, _) => ApplyEdit(); preview.Click += (_, _) => PreviewEdit(); undo.Click += (_, _) => Undo(); redo.Click += (_, _) => Redo();
         paintScope.SelectedIndexChanged += (_, _) => UpdateSelectionSummary();
         foreach (var input in new[] { x, y, width, height }) input.ValueChanged += (_, _) => UpdateSelectionSummary();
@@ -209,7 +209,7 @@ internal sealed class MainForm : Form
     {
         if (map is null) return;
         selectedTiles.Clear(); selectedTiles.Add(new Point(tileX, tileY)); canvas.SetSelection(selectedTiles); canvas.SelectedTile = new Point(tileX, tileY);
-        if (!freeDraw.Checked) canvas.ClearPreview();
+        if (!BrushPreviewActive()) { freeDrawTiles.Clear(); canvas.ClearPreview(); }
         x.Value = tileX; y.Value = tileY; width.Value = 1; height.Value = 1;
         var tile = map.GetTile(tileX, tileY); LoadTile(tile, loadPaintInputs); ShowDetails(tile);
         UpdateSelectionSummary();
@@ -240,7 +240,7 @@ internal sealed class MainForm : Form
         var minX = Math.Min(anchor.X, tile.X); var maxX = Math.Max(anchor.X, tile.X);
         var minY = Math.Min(anchor.Y, tile.Y); var maxY = Math.Max(anchor.Y, tile.Y);
         var section = Enumerable.Range(minY, maxY - minY + 1).SelectMany(row => Enumerable.Range(minX, maxX - minX + 1).Select(column => new Point(column, row))).ToArray();
-        if (freeDraw.Checked) AddFreeDrawTiles(section); else SelectTiles(section, "section");
+        if (BrushPreviewActive()) AddFreeDrawTiles(section); else SelectTiles(section, "section");
     }
 
     private static Point ClampMapPoint(Point point) => new(Math.Clamp(point.X, 0, 255), Math.Clamp(point.Y, 0, 255));
@@ -265,7 +265,7 @@ internal sealed class MainForm : Form
         var minY = selectedTiles.Min(tile => tile.Y); var maxY = selectedTiles.Max(tile => tile.Y);
         x.Value = minX; y.Value = minY; width.Value = maxX - minX + 1; height.Value = maxY - minY + 1;
         canvas.SetSelection(selectedTiles); canvas.SelectedTile = new Point(minX, minY);
-        if (!freeDraw.Checked) canvas.ClearPreview();
+        if (!BrushPreviewActive()) canvas.ClearPreview();
         LoadTile(map!.GetTile(minX, minY), !freeDraw.Checked && !placeSpriteMode.Checked); ShowDetails(map.GetTile(minX, minY));
         UpdateSelectionSummary();
         status.Text = $"{selectedTiles.Count:N0} tiles selected by {kind}. Edit fields, then apply to the selection.";
@@ -454,7 +454,7 @@ internal sealed class MainForm : Form
 
     private Point[] GetEditTargets()
     {
-        if (freeDraw.Checked && freeDrawTiles.Count > 0) return freeDrawTiles.ToArray();
+        if (BrushPreviewActive() && freeDrawTiles.Count > 0) return freeDrawTiles.ToArray();
         return selectedTiles.Count > 1
             ? selectedTiles.ToArray()
             : Enumerable.Range((int)y.Value, (int)height.Value).SelectMany(row => Enumerable.Range((int)x.Value, (int)width.Value).Select(column => new Point(column, row))).ToArray();
@@ -477,6 +477,8 @@ internal sealed class MainForm : Form
         if (!RequireMap() || freeDrawTiles.Count == 0) return;
         canvas.SetPreview(PreviewMaps(freeDrawTiles));
     }
+
+    private bool BrushPreviewActive() => freeDraw.Checked || placeSpriteMode.Checked;
 
     private IEnumerable<MapTile> PreviewMaps(IEnumerable<Point> targets)
     {
