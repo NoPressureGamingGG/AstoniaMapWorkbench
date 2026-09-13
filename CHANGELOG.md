@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add selection/layer summaries, field-level edit previews, explicit confirmation for multi-tile and Whole tile edits, and safe Flags-only defaults while keeping all mutations undoable.
+
 - Render map ground and foreground layers from the read-only legacy Astonia `.pak` sprite archive.
 - Keep movement, sight, and sound blockers as an optional diagnostic overlay rather than the primary map view.
 - Keep the isometric viewport stable while selecting tiles, show an editing grid, and support arrow-key navigation plus tile copy/paste with undo.

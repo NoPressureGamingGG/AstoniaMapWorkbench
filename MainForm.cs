@@ -15,6 +15,7 @@ internal sealed class MainForm : Form
     private readonly TextBox details = ReadOnlyTextBox();
     private readonly TextBox findings = ReadOnlyTextBox();
     private readonly TextBox activeFlags = ReadOnlyTextBox();
+    private readonly Label selectionSummary = new() { AutoSize = true, Text = "Selection: none" };
     private readonly TabControl centerTabs = new() { Dock = DockStyle.Fill };
     private readonly TabControl rightTabs = new() { Dock = DockStyle.Fill };
     private TabPage? validationPage;
@@ -27,6 +28,7 @@ internal sealed class MainForm : Form
     private readonly ComboBox paintScope = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
     private readonly CheckedListBox editFlags = new() { CheckOnClick = true, Height = 165 };
     private readonly Button apply = new() { Text = "Apply tile / rectangle", AutoSize = true };
+    private readonly Button preview = new() { Text = "Preview changes", AutoSize = true };
     private readonly Button undo = new() { Text = "Undo", AutoSize = true };
     private readonly Button redo = new() { Text = "Redo", AutoSize = true };
     private readonly TrackBar zoom = new() { Minimum = 10, Maximum = 80, Value = 40, TickFrequency = 10, Dock = DockStyle.Fill };
@@ -64,7 +66,9 @@ internal sealed class MainForm : Form
         wallsOverlay.CheckedChanged += (_, _) => { canvas.ShowWalls = wallsOverlay.Checked; canvas.RefreshTile(); };
         charactersOverlay.CheckedChanged += (_, _) => { canvas.ShowCharacters = charactersOverlay.Checked; canvas.RefreshTile(); };
         lowerWalls.CheckedChanged += (_, _) => { canvas.LowerWalls = lowerWalls.Checked; canvas.RefreshTile(); };
-        apply.Click += (_, _) => ApplyEdit(); undo.Click += (_, _) => Undo(); redo.Click += (_, _) => Redo();
+        apply.Click += (_, _) => ApplyEdit(); preview.Click += (_, _) => PreviewEdit(); undo.Click += (_, _) => Undo(); redo.Click += (_, _) => Redo();
+        paintScope.SelectedIndexChanged += (_, _) => UpdateSelectionSummary();
+        foreach (var input in new[] { x, y, width, height }) input.ValueChanged += (_, _) => UpdateSelectionSummary();
         paintScope.Items.AddRange(["Whole tile (replace all)", "Ground layer 1", "Ground layer 2", "Wall / ceiling layer 1", "Wall / ceiling layer 2", "Flags only", "Clear whole tile", "Clear ground layer 1", "Clear ground layer 2", "Clear wall / ceiling layer 1", "Clear wall / ceiling layer 2", "Clear flags", "Item only", "NPC only"]);
         paintScope.SelectedIndex = 5;
 
@@ -125,13 +129,13 @@ internal sealed class MainForm : Form
     {
         var panel = new TableLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, ColumnCount = 2, Padding = new Padding(8) };
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        AddRow(panel, "X", x); AddRow(panel, "Y", y); AddRow(panel, "Width", width); AddRow(panel, "Height", height);
+        AddRow(panel, "X", x); AddRow(panel, "Y", y); AddRow(panel, "Width", width); AddRow(panel, "Height", height); AddRow(panel, "Selection", selectionSummary);
         AddRow(panel, "Ground sprite 1", gs1); AddRow(panel, "Ground sprite 2", gs2); AddRow(panel, "Foreground sprite 1", fs1); AddRow(panel, "Foreground sprite 2", fs2);
         AddRow(panel, "Paint target", paintScope);
         item.Dock = DockStyle.Fill; character.Dock = DockStyle.Fill; AddRow(panel, "Item template", item); AddRow(panel, "NPC template", character);
         editFlags.Dock = DockStyle.Top; AddRow(panel, "Static flags", editFlags);
         activeFlags.Height = 44; AddRow(panel, "Active flags", activeFlags);
-        var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Top, Controls = { apply, undo, redo } }; AddRow(panel, "", buttons);
+        var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Top, Controls = { preview, apply, undo, redo } }; AddRow(panel, "", buttons);
         return panel;
     }
 
@@ -181,6 +185,7 @@ internal sealed class MainForm : Form
         selectedTiles.Clear(); selectedTiles.Add(new Point(tileX, tileY)); canvas.SetSelection(selectedTiles); canvas.SelectedTile = new Point(tileX, tileY);
         x.Value = tileX; y.Value = tileY; width.Value = 1; height.Value = 1;
         var tile = map.GetTile(tileX, tileY); LoadTile(tile); ShowDetails(tile);
+        UpdateSelectionSummary();
     }
 
     private void HandleTileInteraction(TileInteraction interaction)
@@ -220,6 +225,7 @@ internal sealed class MainForm : Form
         x.Value = minX; y.Value = minY; width.Value = maxX - minX + 1; height.Value = maxY - minY + 1;
         canvas.SetSelection(selectedTiles); canvas.SelectedTile = new Point(minX, minY);
         LoadTile(map!.GetTile(minX, minY)); ShowDetails(map.GetTile(minX, minY));
+        UpdateSelectionSummary();
         status.Text = $"{selectedTiles.Count:N0} tiles selected by {kind}. Edit fields, then apply to the selection.";
     }
 
@@ -356,13 +362,75 @@ internal sealed class MainForm : Form
     private void ApplyEdit()
     {
         if (!RequireEditable()) return;
-        var targets = selectedTiles.Count > 1
-            ? selectedTiles.ToArray()
-            : Enumerable.Range((int)y.Value, (int)height.Value).SelectMany(row => Enumerable.Range((int)x.Value, (int)width.Value).Select(column => new Point(column, row))).ToArray();
+        var targets = GetEditTargets();
         var before = targets.Select(point => TileSnapshot.Capture(map!.GetTile(point.X, point.Y))).ToList();
+        var after = PreviewSnapshots(targets);
+        var summary = BuildChangeSummary(before, after, targets.Length);
+        if ((targets.Length > 1 || paintScope.SelectedIndex == 0) && MessageBox.Show(this, summary + "\r\n\r\nApply this change?", "Confirm map edit", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
         foreach (var state in before) ApplyValues(map!.GetTile(state.X, state.Y));
         var change = new TileChange(before, before.Select(state => TileSnapshot.Capture(map!.GetTile(state.X, state.Y))).ToList()); undoStack.Push(change); redoStack.Clear();
         canvas.RefreshTile(); ShowDetails(map!.GetTile((int)x.Value, (int)y.Value)); UpdateStatus();
+    }
+
+    private void PreviewEdit()
+    {
+        if (!RequireEditable()) return;
+        var targets = GetEditTargets();
+        var before = targets.Select(point => TileSnapshot.Capture(map!.GetTile(point.X, point.Y))).ToList();
+        MessageBox.Show(this, BuildChangeSummary(before, PreviewSnapshots(targets), targets.Length), "Map edit preview", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    private Point[] GetEditTargets()
+    {
+        return selectedTiles.Count > 1
+            ? selectedTiles.ToArray()
+            : Enumerable.Range((int)y.Value, (int)height.Value).SelectMany(row => Enumerable.Range((int)x.Value, (int)width.Value).Select(column => new Point(column, row))).ToArray();
+    }
+
+    private List<TileSnapshot> PreviewSnapshots(IEnumerable<Point> targets)
+    {
+        return targets.Select(point =>
+        {
+            var source = map!.GetTile(point.X, point.Y);
+            var copy = new MapTile { X = source.X, Y = source.Y, GroundSprite = source.GroundSprite, ForegroundSprite = source.ForegroundSprite, Item = source.Item, Character = source.Character };
+            foreach (var flag in source.Flags) copy.Flags.Add(flag);
+            ApplyValues(copy);
+            return TileSnapshot.Capture(copy);
+        }).ToList();
+    }
+
+    private string BuildChangeSummary(IReadOnlyList<TileSnapshot> before, IReadOnlyList<TileSnapshot> after, int targetCount)
+    {
+        var changed = before.Zip(after).Count(pair => !pair.First.Matches(pair.Second));
+        var pairs = before.Zip(after).ToArray();
+        var ground = pairs.Count(pair => pair.First.Ground != pair.Second.Ground);
+        var foreground = pairs.Count(pair => pair.First.Foreground != pair.Second.Foreground);
+        var items = pairs.Count(pair => pair.First.Item != pair.Second.Item);
+        var characters = pairs.Count(pair => pair.First.Character != pair.Second.Character);
+        var flags = pairs.Count(pair => !pair.First.Flags.OrderBy(flag => flag).SequenceEqual(pair.Second.Flags.OrderBy(flag => flag), StringComparer.OrdinalIgnoreCase));
+        var target = paintScope.SelectedItem?.ToString() ?? "unknown operation";
+        var warning = paintScope.SelectedIndex == 0 ? "WARNING: Whole tile replacement can overwrite ground, walls, flags, items, and NPCs." : "Untouched layers will be preserved.";
+        return $"Operation: {target}\r\nTiles selected: {targetCount:N0}\r\nTiles changing: {changed:N0}\r\nDiff: ground {ground:N0}, walls {foreground:N0}, items {items:N0}, NPCs {characters:N0}, flags {flags:N0}\r\nAffected layer: {AffectedLayerName()}\r\n{warning}";
+    }
+
+    private string AffectedLayerName() => paintScope.SelectedIndex switch
+    {
+        0 => "all tile data",
+        1 or 2 => "ground",
+        3 or 4 => "walls / ceilings",
+        5 or 11 => "static flags",
+        6 => "all tile data",
+        7 or 8 => "ground",
+        9 or 10 => "walls / ceilings",
+        12 => "item reference",
+        13 => "NPC reference",
+        _ => "selected operation"
+    };
+
+    private void UpdateSelectionSummary()
+    {
+        var count = selectedTiles.Count > 1 ? selectedTiles.Count : (int)width.Value * (int)height.Value;
+        selectionSummary.Text = $"{count:N0} tile(s) | affects: {AffectedLayerName()}";
     }
 
     private void ApplyValues(MapTile tile)
@@ -614,8 +682,9 @@ internal sealed class MainForm : Form
     private sealed record WorkbenchLayout(int WindowWidth, int WindowHeight, int LeftWidth, int CenterWidth, int Zoom);
     private sealed class TileSnapshot(int x, int y, uint ground, uint foreground, string? item, string? character, IEnumerable<string> flags)
     {
-        public int X { get; } = x; public int Y { get; } = y; private uint Ground { get; } = ground; private uint Foreground { get; } = foreground; private string? Item { get; } = item; private string? Character { get; } = character; private string[] Flags { get; } = flags.ToArray();
+        public int X { get; } = x; public int Y { get; } = y; public uint Ground { get; } = ground; public uint Foreground { get; } = foreground; public string? Item { get; } = item; public string? Character { get; } = character; public string[] Flags { get; } = flags.ToArray();
         public static TileSnapshot Capture(MapTile tile) => new(tile.X, tile.Y, tile.GroundSprite, tile.ForegroundSprite, tile.Item, tile.Character, tile.Flags);
+        public bool Matches(TileSnapshot other) => Ground == other.Ground && Foreground == other.Foreground && Item == other.Item && Character == other.Character && Flags.OrderBy(flag => flag).SequenceEqual(other.Flags.OrderBy(flag => flag), StringComparer.OrdinalIgnoreCase);
         public void Restore(MapTile tile) { tile.GroundSprite = Ground; tile.ForegroundSprite = Foreground; tile.Item = Item; tile.Character = Character; tile.Flags.Clear(); foreach (var flag in Flags) tile.Flags.Add(flag); }
     }
 }

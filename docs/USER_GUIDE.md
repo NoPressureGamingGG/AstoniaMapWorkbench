@@ -110,6 +110,8 @@ Choose the layer in **Paint target**, enter the desired sprite ID, and apply it 
 
 The editor starts in **Flags only** mode to prevent accidental sprite replacement. Use **Ground layer 1/2** to add ground, **Wall / ceiling layer 1/2** to add wall sections, **Item only** to place an item without changing sprites, and **NPC only** to place an NPC without changing sprites. **Whole tile (replace all)** is deliberately explicit and should be reserved for intentional full-tile replacement.
 
+The Tile editor shows the current selection count and affected layer. **Preview changes** reports the operation, tile count, number of tiles that will change, and affected layer without modifying the map. Applying a multi-tile edit shows the same summary and asks for confirmation. Whole tile replacement always shows an explicit destructive warning. Undo and redo cover applied tile edits, region paste, region clearing, and tile paste; previewing or cancelling never creates an undo entry.
+
 ### Region copy/paste and large deletion
 
 Use **Ctrl-drag** to select a rectangle, then:
