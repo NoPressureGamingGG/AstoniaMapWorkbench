@@ -51,8 +51,7 @@ internal sealed class SpriteArchive
     public uint GetCutSprite(uint sprite)
     {
         var resolved = runtimeBaseSprites.TryGetValue(sprite, out var baseSprite) ? baseSprite : sprite;
-        if (!IsWallFamily(resolved) || !cutSprites.TryGetValue(resolved, out var cut)) return resolved;
-        return cut;
+        return cutSprites.TryGetValue(resolved, out var cut) ? cut : resolved;
     }
 
     public bool IsWallSprite(uint sprite)

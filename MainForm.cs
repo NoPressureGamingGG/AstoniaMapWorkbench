@@ -112,9 +112,11 @@ internal sealed class MainForm : Form
         centerTabs.TabPages.Add(mapPage); centerTabs.TabPages.Add(Tab("Search results", results));
         results.SelectedIndexChanged += (_, _) => { if (results.SelectedItem is Result r) SelectTile(r.Tile.X, r.Tile.Y); };
         templates.SelectedIndexChanged += (_, _) => ApplyTemplateSelection();
+        templates.DoubleClick += (_, _) => rightTabs.SelectedIndex = 0;
 
         validationPage = Tab("Validation", findings);
         spriteBrowserPage = Tab("Sprite browser", BuildSpriteBrowser());
+        rightTabs.Multiline = true; rightTabs.SizeMode = TabSizeMode.Fixed; rightTabs.ItemSize = new Size(110, 24);
         rightTabs.TabPages.Add(Tab("Tile editor", BuildEditor())); rightTabs.TabPages.Add(Tab("Tile details", details)); rightTabs.TabPages.Add(validationPage); rightTabs.TabPages.Add(Tab("Templates", templates)); rightTabs.TabPages.Add(spriteBrowserPage);
         mainSplit.Panel1.Controls.Add(left);
         centerRightSplit.Panel1.Controls.Add(centerTabs);
@@ -212,7 +214,10 @@ internal sealed class MainForm : Form
         var clickedTile = map!.GetTile(tilePoint.X, tilePoint.Y);
         var sprite = PreferredSprite(clickedTile);
         if (sprite == 0) { SelectTile(tilePoint.X, tilePoint.Y); status.Text = "The selected tile has no sprite to match."; return; }
-        var matches = map.Tiles.Values.Where(tile => tile.SpriteComponents.Contains(sprite)).Select(tile => new Point(tile.X, tile.Y));
+        var foregroundMatch = (clickedTile.ForegroundSprite & 0xffff) == sprite || (clickedTile.ForegroundSprite >> 16) == sprite;
+        var matches = map.Tiles.Values.Where(tile => foregroundMatch
+            ? (tile.ForegroundSprite & 0xffff) == sprite || (tile.ForegroundSprite >> 16) == sprite
+            : (tile.GroundSprite & 0xffff) == sprite || (tile.GroundSprite >> 16) == sprite).Select(tile => new Point(tile.X, tile.Y));
         SelectTiles(matches, $"sprite {sprite}");
     }
 
@@ -270,6 +275,18 @@ internal sealed class MainForm : Form
             return;
         }
         NavigateSelection(e);
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData is Keys.Left or Keys.Right or Keys.Up or Keys.Down)
+        {
+            NavigateSelection(new KeyEventArgs(keyData));
+            return true;
+        }
+        if (keyData == (Keys.Control | Keys.Z)) { Undo(); return true; }
+        if (keyData is (Keys.Control | Keys.Y) or (Keys.Control | Keys.Shift | Keys.Z)) { Redo(); return true; }
+        return base.ProcessCmdKey(ref msg, keyData);
     }
 
     private void CopyTile()
@@ -377,6 +394,7 @@ internal sealed class MainForm : Form
         if (!RequireEditable()) return;
         var targets = GetEditTargets();
         var before = targets.Select(point => TileSnapshot.Capture(map!.GetTile(point.X, point.Y))).ToList();
+        rightTabs.SelectedIndex = 0;
         MessageBox.Show(this, BuildChangeSummary(before, PreviewSnapshots(targets), targets.Length), "Map edit preview", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
@@ -500,6 +518,7 @@ internal sealed class MainForm : Form
             var preview = new PictureBox { Width = 96, Height = 84, SizeMode = PictureBoxSizeMode.CenterImage, Image = image.Bitmap, Cursor = Cursors.Hand, Tag = id, BackColor = Color.FromArgb(18, 20, 24) };
             var label = new Label { Text = id.ToString(), Dock = DockStyle.Bottom, ForeColor = Color.White, TextAlign = ContentAlignment.MiddleCenter, Height = 24 };
             preview.Click += (_, _) => { spriteSearch.Text = id.ToString(); SearchSprites(); };
+            preview.DoubleClick += (_, _) => rightTabs.SelectedIndex = 0;
             tile.Controls.Add(preview); tile.Controls.Add(label); spriteGallery.Controls.Add(tile);
         }
         if (spriteGallery.Controls.Count == 0) spriteGallery.Controls.Add(new Label { Text = "No sprites decoded in that range.", ForeColor = Color.White, AutoSize = true });
@@ -523,6 +542,7 @@ internal sealed class MainForm : Form
         var name = selected[(separator + 2)..].Trim();
         if (kind.Equals("item", StringComparison.OrdinalIgnoreCase)) { item.Text = name; paintScope.SelectedIndex = 12; }
         if (kind.Equals("npc", StringComparison.OrdinalIgnoreCase)) { character.Text = name; paintScope.SelectedIndex = 13; }
+        rightTabs.SelectedIndex = 0;
         status.Text = $"Selected {kind} template '{name}'. Choose a tile or region, then Apply tile / rectangle to place it.";
     }
     private void ShowTiles(IEnumerable<MapTile> tiles, string kind) { results.Items.Clear(); foreach (var tile in tiles.OrderBy(t => t.Y).ThenBy(t => t.X)) results.Items.Add(new Result(kind, tile)); centerTabs.SelectedIndex = 1; status.Text = $"{results.Items.Count:N0} {kind} matches. Click one to select it on the canvas."; }

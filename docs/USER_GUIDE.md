@@ -63,9 +63,9 @@ Choose **Server profile > Save active profile...** to save the currently detecte
 - **Left click-drag:** pan the map.
 - **Middle-drag:** pan the map.
 - **Mouse wheel or zoom slider:** zoom in or out. The slider can zoom farther out than the original editor.
-- **Arrow keys:** move the current tile selection.
+- **Arrow keys:** move the current tile selection, even when a Tile editor control has focus.
 - **Ctrl-drag:** draw a rectangular selection window. If the pointer reaches a canvas edge while dragging, the viewport auto-pans so the selection can continue beyond the visible area.
-- **Shift-click:** select every tile containing the clicked tile's preferred foreground sprite. This is useful for selecting all matching walls before applying a static flag.
+- **Shift-click:** select every tile containing the clicked tile's matching sprite on the same ground or foreground layer. It does not match unrelated layers.
 - **Show walls / ceilings:** toggle foreground layers independently, similar to lowering walls for room inspection. This changes only the preview.
 - **Lower walls (F8 view):** resolves current-client composite IDs before applying the cut-sprite transformation to eligible wall sprites while leaving tables, chairs, and other non-cut foreground objects visible. This is a preview equivalent of the in-game F8 command. Some walls intentionally have no cut variant and will remain full height.
 - **Show NPCs:** toggle previews of `ch=` characters independently. NPCs are resolved from the `sprite=` value in their `.chr` template; this changes only the preview.
@@ -109,6 +109,8 @@ The four sprite fields correspond directly to the Server 3 map layers:
 Choose the layer in **Paint target**, enter the desired sprite ID, and apply it to the selection. The layer-specific commands change only that layer. **Whole tile** changes both sprite layers and the item/NPC references. The clear-layer commands remove only their named layer.
 
 The editor starts in **Flags only** mode to prevent accidental sprite replacement. Use **Ground layer 1/2** to add ground, **Wall / ceiling layer 1/2** to add wall sections, **Item only** to place an item without changing sprites, and **NPC only** to place an NPC without changing sprites. **Whole tile (replace all)** is deliberately explicit and should be reserved for intentional full-tile replacement.
+
+Clicking a template result or double-clicking a sprite returns to the Tile editor. **Preview changes** also returns to the Tile editor before showing its diff summary.
 
 The Tile editor shows the current selection count and affected layer. **Preview changes** reports the operation, tile count, number of tiles that will change, and affected layer without modifying the map. Applying a multi-tile edit shows the same summary and asks for confirmation. Whole tile replacement always shows an explicit destructive warning. Undo and redo cover applied tile edits, region paste, region clearing, and tile paste; previewing or cancelling never creates an undo entry.
 

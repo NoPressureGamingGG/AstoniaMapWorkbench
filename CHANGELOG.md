@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Add selection/layer summaries, field-level edit previews, explicit confirmation for multi-tile and Whole tile edits, and safe Flags-only defaults while keeping all mutations undoable.
+- Fix focused-control arrow navigation, same-layer Shift selection, wrapped right tabs, template/sprite double-click navigation, and client cut-metadata coverage for dungeon walls.
 
 - Render map ground and foreground layers from the read-only legacy Astonia `.pak` sprite archive.
 - Keep movement, sight, and sound blockers as an optional diagnostic overlay rather than the primary map view.
