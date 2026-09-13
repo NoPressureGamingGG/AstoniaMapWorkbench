@@ -223,7 +223,7 @@ internal sealed class MainForm : Form
         var matches = map.Tiles.Values.Where(tile => foregroundMatch
             ? (tile.ForegroundSprite & 0xffff) == sprite || (tile.ForegroundSprite >> 16) == sprite
             : (tile.GroundSprite & 0xffff) == sprite || (tile.GroundSprite >> 16) == sprite).Select(tile => new Point(tile.X, tile.Y));
-        SelectTiles(matches, $"sprite {sprite}");
+        SelectTiles(matches, $"sprite {sprite} on {(foregroundMatch ? "foreground" : "ground")}");
     }
 
     private void SelectTiles(IEnumerable<Point> tiles, string kind)
