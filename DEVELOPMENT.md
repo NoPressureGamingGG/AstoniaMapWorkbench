@@ -16,6 +16,8 @@ The public repository contains only completed, tested Workbench updates.
 5. Run `git diff --check` and confirm no `bin/`, `obj/`, credentials, maps, runtime logs, or private client/server assets are staged.
 6. Commit a focused change and push it to `main` only after steps 1-5 pass.
 
+The copy of `docs/USER_GUIDE.md` on GitHub is the canonical public guide. Do not leave user-facing documentation only in a local checkout or in the AU server repository.
+
 ## What counts as tested
 
 Compilation alone is not enough for a user-facing editor change. A completed update must have:

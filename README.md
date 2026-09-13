@@ -40,4 +40,4 @@ Do not attach credentials, database dumps, runtime logs containing private data,
 
 Server 3 is the current lane. Server 3.5 should share the same application and receive a separate profile/asset adapter rather than a fork. The planned adapter must account for its source layout, flag table, client assets, and any map/template differences before 3.5 is advertised as supported.
 
-See [the user guide](docs/USER_GUIDE.md) for current workflows.
+The [user guide](docs/USER_GUIDE.md) in this repository is the canonical, publicly updated Workbench guide. Every user-facing control or workflow change must update it in the same commit as the code.
