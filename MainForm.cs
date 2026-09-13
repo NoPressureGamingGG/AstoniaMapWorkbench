@@ -11,6 +11,12 @@ internal sealed class MainForm : Form
     private readonly ComboBox spriteBrowserTarget = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
     private uint? selectedBrowserSprite;
     private readonly FlowLayoutPanel spriteGallery = new() { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8), BackColor = Color.FromArgb(24, 26, 30) };
+    private readonly ListBox spriteWorkspace = new() { Height = 54, Width = 230, AllowDrop = true };
+    private readonly ListBox recentSprites = new() { Height = 54, Width = 180 };
+    private readonly CheckBox placeSpriteMode = new() { Text = "Click-to-place preview", AutoSize = true };
+    private readonly List<uint> spriteWorkspaceIds = [];
+    private readonly LinkedList<uint> recentSpriteIds = [];
+    private readonly string spriteWorkspacePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AstoniaMapWorkbench", "sprite-workspace.json");
     private readonly CheckedListBox flagSearch = new() { Dock = DockStyle.Fill, CheckOnClick = true };
     private readonly TextBox templateSearch = new() { PlaceholderText = "Search item or character template", Dock = DockStyle.Fill };
     private readonly ListBox results = new() { Dock = DockStyle.Fill };
@@ -119,6 +125,10 @@ internal sealed class MainForm : Form
         results.SelectedIndexChanged += (_, _) => { if (results.SelectedItem is Result r) SelectTile(r.Tile.X, r.Tile.Y); };
         templates.SelectedIndexChanged += (_, _) => ApplyTemplateSelection();
         templates.DoubleClick += (_, _) => rightTabs.SelectedIndex = 0;
+        spriteWorkspace.SelectedIndexChanged += (_, _) => { if (spriteWorkspace.SelectedItem is uint sprite) SelectBrowserSprite(sprite); };
+        recentSprites.SelectedIndexChanged += (_, _) => { if (recentSprites.SelectedItem is uint sprite) SelectBrowserSprite(sprite); };
+        spriteWorkspace.DragEnter += (_, e) => e.Effect = e.Data?.GetDataPresent(DataFormats.Text) == true ? DragDropEffects.Copy : DragDropEffects.None;
+        spriteWorkspace.DragDrop += (_, e) => { if (uint.TryParse(e.Data?.GetData(DataFormats.Text)?.ToString(), out var sprite)) AddSpriteToWorkspace(sprite); };
 
         validationPage = Tab("Validation", findings);
         spriteBrowserPage = Tab("Sprite browser", BuildSpriteBrowser());
@@ -130,6 +140,7 @@ internal sealed class MainForm : Form
         mainSplit.Panel2.Controls.Add(centerRightSplit);
         Controls.Add(mainSplit); Controls.Add(status); Controls.Add(menu); status.Dock = DockStyle.Bottom;
         TryLoadDefaultSpriteArchive();
+        LoadSpriteWorkspace();
         if (startupArguments?.FirstOrDefault(File.Exists) is { } path) OpenMap(path);
     }
 
@@ -149,8 +160,8 @@ internal sealed class MainForm : Form
 
     private Control BuildSpriteBrowser()
     {
-        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, Padding = new Padding(6) };
-        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize)); panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, Padding = new Padding(6) };
+        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize)); panel.RowStyles.Add(new RowStyle(SizeType.AutoSize)); panel.RowStyles.Add(new RowStyle(SizeType.AutoSize)); panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var rangeLabel = new Label { Text = "Sprite ID or range", AutoSize = true, Padding = new Padding(0, 6, 6, 0) };
         var browse = new Button { Text = "Browse archive", AutoSize = true };
         browse.Click += (_, _) => BrowseSprites();
@@ -160,7 +171,9 @@ internal sealed class MainForm : Form
         var controls = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 6, AutoSize = true };
         controls.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); controls.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); controls.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); controls.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); controls.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); controls.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         controls.Controls.Add(rangeLabel, 0, 0); controls.Controls.Add(spriteBrowserRange, 1, 0); controls.Controls.Add(browse, 2, 0); controls.Controls.Add(spriteBrowserSource, 3, 0); controls.Controls.Add(spriteBrowserTarget, 4, 0); controls.Controls.Add(use, 5, 0);
-        panel.Controls.Add(controls, 0, 0); panel.Controls.Add(spriteGallery, 0, 1);
+        var groupButtons = new FlowLayoutPanel { AutoSize = true, Controls = { new Label { Text = "Working group: drag thumbnails here", AutoSize = true }, spriteWorkspace, Button("Add selected", (_, _) => { if (selectedBrowserSprite is { } sprite) AddSpriteToWorkspace(sprite); }), Button("Use group sprite", (_, _) => { if (spriteWorkspace.SelectedItem is uint sprite) SelectBrowserSprite(sprite); }) } };
+        var recentBar = new FlowLayoutPanel { AutoSize = true, Controls = { new Label { Text = "Recent 5:", AutoSize = true }, recentSprites } };
+        panel.Controls.Add(controls, 0, 0); panel.Controls.Add(groupButtons, 0, 1); panel.Controls.Add(recentBar, 0, 2); panel.Controls.Add(spriteGallery, 0, 3);
         return panel;
     }
 
@@ -203,6 +216,13 @@ internal sealed class MainForm : Form
     private void HandleTileInteraction(TileInteraction interaction)
     {
         if (map is null) return;
+        if (placeSpriteMode.Checked && selectedBrowserSprite is not null && (interaction.Modifiers & (Keys.Control | Keys.Shift)) == 0)
+        {
+            SelectTile(interaction.Tile.X, interaction.Tile.Y);
+            canvas.SetPreview(PreviewMaps([interaction.Tile]));
+            status.Text = $"Previewing sprite {selectedBrowserSprite} at ({interaction.Tile.X},{interaction.Tile.Y}). Apply to commit.";
+            return;
+        }
         if ((interaction.Modifiers & Keys.Shift) != 0) { SelectMatchingSprite(interaction.Tile); return; }
         if ((interaction.Modifiers & Keys.Control) != 0 && interaction.SelectionStart is { } start)
         {
@@ -573,13 +593,14 @@ internal sealed class MainForm : Form
             var tile = new Panel { Width = 96, Height = 112, Margin = new Padding(4), BackColor = Color.FromArgb(34, 36, 42), Tag = id };
             var preview = new PictureBox { Width = 96, Height = 84, SizeMode = PictureBoxSizeMode.CenterImage, Image = image.Bitmap, Cursor = Cursors.Hand, Tag = id, BackColor = Color.FromArgb(18, 20, 24) };
             var label = new Label { Text = id.ToString(), Dock = DockStyle.Bottom, ForeColor = Color.White, TextAlign = ContentAlignment.MiddleCenter, Height = 24 };
+            preview.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left) preview.DoDragDrop(id.ToString(), DragDropEffects.Copy); };
             preview.Click += (_, _) => SelectBrowserSprite((uint)id);
             preview.DoubleClick += (_, _) => rightTabs.SelectedIndex = 0;
             tile.Controls.Add(preview); tile.Controls.Add(label); spriteGallery.Controls.Add(tile);
         }
         if (spriteGallery.Controls.Count == 0) spriteGallery.Controls.Add(new Label { Text = "No sprites decoded in that range.", ForeColor = Color.White, AutoSize = true });
     }
-    private void SelectBrowserSprite(uint sprite) { selectedBrowserSprite = sprite; UseBrowserSprite(); status.Text = $"Sprite {sprite} selected for {spriteBrowserTarget.SelectedItem}. Double-click it again to return to the Tile editor."; }
+    private void SelectBrowserSprite(uint sprite) { selectedBrowserSprite = sprite; AddRecentSprite(sprite); UseBrowserSprite(); status.Text = $"Sprite {sprite} selected for {spriteBrowserTarget.SelectedItem}. Click the map to preview-place it, then Apply to commit."; }
     private void UseBrowserSprite()
     {
         if (selectedBrowserSprite is not { } sprite) return;
@@ -589,6 +610,56 @@ internal sealed class MainForm : Form
         else if (target == 2) { fs1.Value = sprite; paintScope.SelectedIndex = 3; }
         else { fs2.Value = sprite; paintScope.SelectedIndex = 4; }
         rightTabs.SelectedIndex = 0;
+        placeSpriteMode.Checked = true;
+    }
+
+    private void AddSpriteToWorkspace(uint sprite)
+    {
+        if (!spriteWorkspaceIds.Contains(sprite)) spriteWorkspaceIds.Add(sprite);
+        SaveSpriteWorkspace(); RefreshSpriteLists();
+    }
+
+    private void RefreshSpriteLists()
+    {
+        spriteWorkspace.Items.Clear(); foreach (var sprite in spriteWorkspaceIds) spriteWorkspace.Items.Add(sprite);
+        recentSprites.Items.Clear(); foreach (var sprite in recentSpriteIds) recentSprites.Items.Add(sprite);
+    }
+
+    private void AddRecentSprite(uint sprite)
+    {
+        recentSpriteIds.Remove(sprite); recentSpriteIds.AddFirst(sprite);
+        while (recentSpriteIds.Count > 5) recentSpriteIds.RemoveLast();
+        RefreshSpriteLists(); SaveSpriteWorkspace();
+    }
+
+    private void LoadSpriteWorkspace()
+    {
+        try
+        {
+            if (!File.Exists(spriteWorkspacePath)) return;
+            var data = JsonSerializer.Deserialize<SpriteWorkspaceData>(File.ReadAllText(spriteWorkspacePath));
+            if (data is null) return;
+            spriteWorkspaceIds.AddRange(data.Workspace ?? []);
+            foreach (var sprite in (data.Recent ?? []).Take(5)) recentSpriteIds.AddLast(sprite);
+            RefreshSpriteLists();
+        }
+        catch { }
+    }
+
+    private void SaveSpriteWorkspace()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(spriteWorkspacePath)!);
+            File.WriteAllText(spriteWorkspacePath, JsonSerializer.Serialize(new SpriteWorkspaceData { Workspace = spriteWorkspaceIds, Recent = recentSpriteIds.ToList() }, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch { }
+    }
+
+    private sealed class SpriteWorkspaceData
+    {
+        public List<uint>? Workspace { get; set; }
+        public List<uint>? Recent { get; set; }
     }
     private void ShowSpriteBrowser() => rightTabs.SelectedTab = spriteBrowserPage;
     private void SearchFlags()

@@ -166,6 +166,10 @@ Clicking a browser thumbnail selects it for placement; it does not search the op
 
 Use the browser source selector to browse an Archive ID/range or the sprites currently used by **Map Ground 1** or **Map Ground 2**. The source selector controls what is shown; the placement selector controls which map layer receives the chosen sprite.
 
+The browser keeps a persistent **Working group** and **Recent 5** list in `%LOCALAPPDATA%/AstoniaMapWorkbench/sprite-workspace.json`. Drag a thumbnail into Working group, or use **Add selected**. Select a group/recent sprite to reuse it without searching again.
+
+Selecting a sprite also enables **Click-to-place preview**. Click a map tile to preview the sprite there on the chosen layer, then use **Apply tile / rectangle** to commit it. Normal click placement is preview-only until Apply; Ctrl-drag and Shift-click remain available for selection workflows.
+
 ### Free draw preview
 
 Enable **Free draw preview**, choose a sprite and placement layer, then Ctrl-drag across the map. The selected squares show the proposed sprite immediately, but the map is not changed until **Apply tile / rectangle** is confirmed. Each painted tile receives its own undo entry, so Ctrl+Z can step backward tile by tile. Turning Free draw off restores ordinary Ctrl-drag region selection.
