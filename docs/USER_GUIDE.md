@@ -164,6 +164,12 @@ The browser displays the decoded/base art available to the Workbench. Runtime co
 
 Clicking a browser thumbnail selects it for placement; it does not search the opened map. Choose **Ground layer 1**, **Ground layer 2**, **Wall / ceiling layer 1**, or **Wall / ceiling layer 2**, then click **Use selected sprite**. The sprite ID is placed in the corresponding Tile editor field and the matching Paint target is selected. Apply it to the current tile or selection from the Tile editor.
 
+Use the browser source selector to browse an Archive ID/range or the sprites currently used by **Map Ground 1** or **Map Ground 2**. The source selector controls what is shown; the placement selector controls which map layer receives the chosen sprite.
+
+### Free draw preview
+
+Enable **Free draw preview**, choose a sprite and placement layer, then Ctrl-drag across the map. The selected squares show the proposed sprite immediately, but the map is not changed until **Apply tile / rectangle** is confirmed. Each painted tile receives its own undo entry, so Ctrl+Z can step backward tile by tile. Turning Free draw off restores ordinary Ctrl-drag region selection.
+
 Current ZIP PNGs use the same magenta-key transparency, transparent-border cropping, and centered anchor offsets as the Uncharted client. This keeps wall-mounted objects and ground artwork from displaying their source-image rectangles.
 
 ## Validation and saving

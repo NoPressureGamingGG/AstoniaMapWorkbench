@@ -6,6 +6,7 @@
 - Fix focused-control arrow navigation, same-layer Shift selection, wrapped right tabs, template/sprite double-click navigation, and client cut-metadata coverage for dungeon walls.
 - Render item/NPC template previews for Item-only/NPC-only operations and align the active build with the published standalone source copy.
 - Make Sprite Browser thumbnails placement-ready with explicit Ground 1/2 and Wall/Ceiling 1/2 targets instead of invoking map-search validation.
+- Add Map Ground 1/2 browser sources and Free draw preview mode with per-tile undo entries.
 - Fix Ctrl-drag selections outside the map bounds causing a NumericUpDown crash from negative coordinates.
 
 - Render map ground and foreground layers from the read-only legacy Astonia `.pak` sprite archive.

@@ -266,7 +266,7 @@ internal sealed class MapCanvas : Control
     private void DrawLayer(Graphics graphics, Func<MapTile, uint> chooseSprite, int yAdjust, bool hideWallSprites = false)
     {
         if (map is null || sprites is null) return;
-        foreach (var tile in map.Tiles.Values.OrderBy(tile => tile.X + tile.Y).ThenBy(tile => tile.X))
+        foreach (var tile in PreviewOrMapTiles().OrderBy(tile => tile.X + tile.Y).ThenBy(tile => tile.X))
         {
             var anchor = TileToScreen(tile.X, tile.Y);
             if (!InViewport(anchor)) continue;
