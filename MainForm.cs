@@ -50,6 +50,7 @@ internal sealed class MainForm : Form
     private readonly Stack<TileChange> undoStack = new();
     private readonly Stack<TileChange> redoStack = new();
     private readonly HashSet<Point> selectedTiles = [];
+    private readonly HashSet<Point> freeDrawTiles = [];
     private readonly string layoutPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AstoniaMapWorkbench", "layout.json");
     private readonly SplitContainer mainSplit = new() { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, FixedPanel = FixedPanel.Panel1 };
     private readonly SplitContainer centerRightSplit = new() { Dock = DockStyle.Fill, Orientation = Orientation.Vertical };
@@ -77,7 +78,7 @@ internal sealed class MainForm : Form
         wallsOverlay.CheckedChanged += (_, _) => { canvas.ShowWalls = wallsOverlay.Checked; canvas.RefreshTile(); };
         charactersOverlay.CheckedChanged += (_, _) => { canvas.ShowCharacters = charactersOverlay.Checked; canvas.RefreshTile(); };
         lowerWalls.CheckedChanged += (_, _) => { canvas.LowerWalls = lowerWalls.Checked; canvas.RefreshTile(); };
-        freeDraw.CheckedChanged += (_, _) => { if (freeDraw.Checked) PreviewFreeDraw(); else canvas.ClearPreview(); };
+        freeDraw.CheckedChanged += (_, _) => { if (freeDraw.Checked) PreviewFreeDraw(); else { freeDrawTiles.Clear(); canvas.ClearPreview(); } };
         apply.Click += (_, _) => ApplyEdit(); preview.Click += (_, _) => PreviewEdit(); undo.Click += (_, _) => Undo(); redo.Click += (_, _) => Redo();
         paintScope.SelectedIndexChanged += (_, _) => UpdateSelectionSummary();
         foreach (var input in new[] { x, y, width, height }) input.ValueChanged += (_, _) => UpdateSelectionSummary();
@@ -208,7 +209,7 @@ internal sealed class MainForm : Form
     {
         if (map is null) return;
         selectedTiles.Clear(); selectedTiles.Add(new Point(tileX, tileY)); canvas.SetSelection(selectedTiles); canvas.SelectedTile = new Point(tileX, tileY);
-        canvas.ClearPreview();
+        if (!freeDraw.Checked) canvas.ClearPreview();
         x.Value = tileX; y.Value = tileY; width.Value = 1; height.Value = 1;
         var tile = map.GetTile(tileX, tileY); LoadTile(tile, loadPaintInputs); ShowDetails(tile);
         UpdateSelectionSummary();
@@ -219,8 +220,8 @@ internal sealed class MainForm : Form
         if (map is null) return;
         if (placeSpriteMode.Checked && selectedBrowserSprite is not null && (interaction.Modifiers & (Keys.Control | Keys.Shift)) == 0)
         {
+            AddFreeDrawTiles([interaction.Tile]);
             SelectTile(interaction.Tile.X, interaction.Tile.Y, false);
-            canvas.SetPreview(PreviewMaps([interaction.Tile]));
             status.Text = $"Previewing sprite {selectedBrowserSprite} at ({interaction.Tile.X},{interaction.Tile.Y}). Apply to commit.";
             return;
         }
@@ -238,8 +239,8 @@ internal sealed class MainForm : Form
         anchor = ClampMapPoint(anchor); tile = ClampMapPoint(tile);
         var minX = Math.Min(anchor.X, tile.X); var maxX = Math.Max(anchor.X, tile.X);
         var minY = Math.Min(anchor.Y, tile.Y); var maxY = Math.Max(anchor.Y, tile.Y);
-        SelectTiles(Enumerable.Range(minY, maxY - minY + 1).SelectMany(row => Enumerable.Range(minX, maxX - minX + 1).Select(column => new Point(column, row))), "section");
-        if (freeDraw.Checked) PreviewFreeDraw();
+        var section = Enumerable.Range(minY, maxY - minY + 1).SelectMany(row => Enumerable.Range(minX, maxX - minX + 1).Select(column => new Point(column, row))).ToArray();
+        if (freeDraw.Checked) AddFreeDrawTiles(section); else SelectTiles(section, "section");
     }
 
     private static Point ClampMapPoint(Point point) => new(Math.Clamp(point.X, 0, 255), Math.Clamp(point.Y, 0, 255));
@@ -264,7 +265,7 @@ internal sealed class MainForm : Form
         var minY = selectedTiles.Min(tile => tile.Y); var maxY = selectedTiles.Max(tile => tile.Y);
         x.Value = minX; y.Value = minY; width.Value = maxX - minX + 1; height.Value = maxY - minY + 1;
         canvas.SetSelection(selectedTiles); canvas.SelectedTile = new Point(minX, minY);
-        canvas.ClearPreview();
+        if (!freeDraw.Checked) canvas.ClearPreview();
         LoadTile(map!.GetTile(minX, minY), !freeDraw.Checked && !placeSpriteMode.Checked); ShowDetails(map.GetTile(minX, minY));
         UpdateSelectionSummary();
         status.Text = $"{selectedTiles.Count:N0} tiles selected by {kind}. Edit fields, then apply to the selection.";
@@ -437,7 +438,7 @@ internal sealed class MainForm : Form
             foreach (var state in before) ApplyValues(map!.GetTile(state.X, state.Y));
             var change = new TileChange(before, before.Select(state => TileSnapshot.Capture(map!.GetTile(state.X, state.Y))).ToList()); undoStack.Push(change);
         }
-        canvas.ClearPreview(); canvas.RefreshTile(); ShowDetails(map!.GetTile((int)x.Value, (int)y.Value)); UpdateStatus();
+        freeDrawTiles.Clear(); canvas.ClearPreview(); canvas.RefreshTile(); ShowDetails(map!.GetTile((int)x.Value, (int)y.Value)); UpdateStatus();
     }
 
     private void PreviewEdit()
@@ -452,6 +453,7 @@ internal sealed class MainForm : Form
 
     private Point[] GetEditTargets()
     {
+        if (freeDraw.Checked && freeDrawTiles.Count > 0) return freeDrawTiles.ToArray();
         return selectedTiles.Count > 1
             ? selectedTiles.ToArray()
             : Enumerable.Range((int)y.Value, (int)height.Value).SelectMany(row => Enumerable.Range((int)x.Value, (int)width.Value).Select(column => new Point(column, row))).ToArray();
@@ -477,6 +479,13 @@ internal sealed class MainForm : Form
 
     private IEnumerable<MapTile> PreviewMaps(IEnumerable<Point> targets)
     {
+
+    private void AddFreeDrawTiles(IEnumerable<Point> tiles)
+    {
+        if (!RequireMap()) return;
+        foreach (var tile in tiles) freeDrawTiles.Add(ClampMapPoint(tile));
+        PreviewFreeDraw();
+    }
         return targets.Select(point =>
         {
             var source = map!.GetTile(point.X, point.Y);
@@ -640,6 +649,7 @@ internal sealed class MainForm : Form
         else if (target == 1) { gs2.Value = sprite; paintScope.SelectedIndex = 2; }
         else if (target == 2) { fs1.Value = sprite; paintScope.SelectedIndex = 3; }
         else { fs2.Value = sprite; paintScope.SelectedIndex = 4; }
+        freeDrawTiles.Clear(); canvas.ClearPreview();
         if (returnToEditor) rightTabs.SelectedIndex = 0;
         placeSpriteMode.Checked = true;
     }
