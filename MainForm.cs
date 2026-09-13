@@ -603,7 +603,16 @@ internal sealed class MainForm : Form
             var tile = new Panel { Width = 96, Height = 112, Margin = new Padding(4), BackColor = Color.FromArgb(34, 36, 42), Tag = id };
             var preview = new PictureBox { Width = 96, Height = 84, SizeMode = PictureBoxSizeMode.CenterImage, Image = image.Bitmap, Cursor = Cursors.Hand, Tag = id, BackColor = Color.FromArgb(18, 20, 24) };
             var label = new Label { Text = id.ToString(), Dock = DockStyle.Bottom, ForeColor = Color.White, TextAlign = ContentAlignment.MiddleCenter, Height = 24 };
-            preview.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left) preview.DoDragDrop(id.ToString(), DragDropEffects.Copy); };
+            var dragOrigin = Point.Empty;
+            preview.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left) dragOrigin = e.Location; };
+            preview.MouseMove += (_, e) =>
+            {
+                if (e.Button == MouseButtons.Left && dragOrigin != Point.Empty && (Math.Abs(e.X - dragOrigin.X) >= SystemInformation.DragSize.Width / 2 || Math.Abs(e.Y - dragOrigin.Y) >= SystemInformation.DragSize.Height / 2))
+                {
+                    dragOrigin = Point.Empty;
+                    preview.DoDragDrop(id.ToString(), DragDropEffects.Copy);
+                }
+            };
             preview.Click += (_, _) => SelectBrowserSprite((uint)id);
             preview.DoubleClick += (_, _) => SelectBrowserSprite((uint)id);
             tile.Controls.Add(preview); tile.Controls.Add(label); spriteGallery.Controls.Add(tile);
