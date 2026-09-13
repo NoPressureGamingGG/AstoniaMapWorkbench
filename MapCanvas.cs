@@ -209,7 +209,11 @@ internal sealed class MapCanvas : Control
 
     public void RefreshTile() => Invalidate();
 
-    public void SetPreview(IEnumerable<MapTile> tiles) => previewTiles = tiles.ToDictionary(tile => new Point(tile.X, tile.Y));
+    public void SetPreview(IEnumerable<MapTile> tiles)
+    {
+        previewTiles = tiles.ToDictionary(tile => new Point(tile.X, tile.Y));
+        Invalidate();
+    }
     public void ClearPreview() { previewTiles = new Dictionary<Point, MapTile>(); Invalidate(); }
 
     public void SetSelection(IEnumerable<Point> tiles)
@@ -313,7 +317,12 @@ internal sealed class MapCanvas : Control
         }
     }
 
-    private IEnumerable<MapTile> PreviewOrMapTiles() => previewTiles.Count == 0 ? map?.Tiles.Values ?? Enumerable.Empty<MapTile>() : previewTiles.Values;
+    private IEnumerable<MapTile> PreviewOrMapTiles()
+    {
+        if (map is null) return Enumerable.Empty<MapTile>();
+        if (previewTiles.Count == 0) return map.Tiles.Values;
+        return map.Tiles.Values.Where(tile => !previewTiles.ContainsKey(new Point(tile.X, tile.Y))).Concat(previewTiles.Values);
+    }
 
     private void DrawOverlays(Graphics graphics)
     {

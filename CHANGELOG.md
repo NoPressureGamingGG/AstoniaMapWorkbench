@@ -7,6 +7,7 @@
 - Render item/NPC template previews for Item-only/NPC-only operations and align the active build with the published standalone source copy.
 - Make Sprite Browser thumbnails placement-ready with explicit Ground 1/2 and Wall/Ceiling 1/2 targets instead of invoking map-search validation.
 - Add Map Ground 1/2 browser sources and Free draw preview mode with per-tile undo entries.
+- Fix Free Draw and click-to-place previews not repainting the canvas after their temporary tile state changed.
 - Add persistent Working group and Recent 5 sprite lists, thumbnail drag/drop, and click-to-place previews for the selected layer.
 - Repopulate the Sprite Browser gallery when Working group or Recent 5 is selected, and wrap the browser toolbar on narrow panels.
 - Fix Ctrl-drag selections outside the map bounds causing a NumericUpDown crash from negative coordinates.
