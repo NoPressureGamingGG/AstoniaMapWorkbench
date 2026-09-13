@@ -8,6 +8,7 @@
 - Make Sprite Browser thumbnails placement-ready with explicit Ground 1/2 and Wall/Ceiling 1/2 targets instead of invoking map-search validation.
 - Add Map Ground 1/2 browser sources and Free draw preview mode with per-tile undo entries.
 - Fix Free Draw and click-to-place previews not repainting the canvas after their temporary tile state changed.
+- Add no-ID Sprite Browser sources for map walls/foreground, all map sprites, and the current client art catalog.
 - Fix Free Draw rectangle selection overwriting the chosen brush with the sprite from the drag-start tile.
 - Fix Free Draw preview reading the ordinary selection instead of the accumulated stroke, and report committed tile count.
 - Keep browser click-to-place and Free Draw previews persistent across multiple clicks and rectangle sweeps until Apply.

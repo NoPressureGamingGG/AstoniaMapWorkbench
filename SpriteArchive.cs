@@ -19,6 +19,15 @@ internal sealed class SpriteArchive
     public string PakDirectory => pakDirectory;
     public string? LastError { get; private set; }
 
+    public IEnumerable<uint> AvailableSpriteIds()
+    {
+        var ids = new HashSet<uint>();
+        foreach (var archive in currentArchives)
+            foreach (var entry in archive.Entries)
+                if (uint.TryParse(Path.GetFileNameWithoutExtension(entry.FullName), out var id)) ids.Add(id);
+        return ids.OrderBy(id => id);
+    }
+
     public SpriteArchive(string pakDirectory)
     {
         if (!Directory.Exists(pakDirectory)) throw new DirectoryNotFoundException($"Sprite package directory not found: {pakDirectory}");

@@ -166,7 +166,7 @@ The browser displays the decoded/base art available to the Workbench. Runtime co
 
 Clicking a browser thumbnail selects it for placement; it does not search the opened map. Choose **Ground layer 1**, **Ground layer 2**, **Wall / ceiling layer 1**, or **Wall / ceiling layer 2**, then click **Use selected sprite**. The sprite ID is placed in the corresponding Tile editor field and the matching Paint target is selected. Apply it to the current tile or selection from the Tile editor.
 
-Use the browser source selector to browse an Archive ID/range or the sprites currently used by **Map Ground 1** or **Map Ground 2**. The source selector controls what is shown; the placement selector controls which map layer receives the chosen sprite.
+Use the browser source selector to browse an Archive ID/range, the sprites currently used by **Map Ground 1**, **Map Ground 2**, or **Map walls / foreground**, every sprite used anywhere in the open map, or the complete discoverable current client art catalog. The source selector controls what is shown; the placement selector controls which map layer receives the chosen sprite. The last three sources require no sprite-ID knowledge.
 
 The browser keeps a persistent **Working group** and **Recent 5** list in `%LOCALAPPDATA%/AstoniaMapWorkbench/sprite-workspace.json`. Drag a thumbnail into Working group, or use **Add selected**. Select a group/recent sprite to reuse it without searching again.
 

@@ -167,7 +167,7 @@ internal sealed class MainForm : Form
         var rangeLabel = new Label { Text = "Sprite ID or range", AutoSize = true, Padding = new Padding(0, 6, 6, 0) };
         var browse = new Button { Text = "Browse archive", AutoSize = true };
         browse.Click += (_, _) => BrowseSprites();
-        spriteBrowserSource.Items.AddRange(["Archive ID/range", "Map Ground 1", "Map Ground 2"]); spriteBrowserSource.SelectedIndex = 0;
+        spriteBrowserSource.Items.AddRange(["Archive ID/range", "Map Ground 1", "Map Ground 2", "Map walls / foreground", "All map sprites", "All current client art"]); spriteBrowserSource.SelectedIndex = 0;
         spriteBrowserTarget.Items.AddRange(["Ground layer 1", "Ground layer 2", "Wall / ceiling layer 1", "Wall / ceiling layer 2"]); spriteBrowserTarget.SelectedIndex = 0;
         var use = new Button { Text = "Use selected sprite", AutoSize = true }; use.Click += (_, _) => UseBrowserSprite(false);
         var applyBrowser = new Button { Text = "Apply preview", AutoSize = true }; applyBrowser.Click += (_, _) => ApplyEdit();
@@ -592,10 +592,22 @@ internal sealed class MainForm : Form
     {
         if (canvas.Sprites is null) { MessageBox.Show(this, "Choose a legacy pak folder first."); return; }
         IEnumerable<uint> ids;
-        if (spriteBrowserSource.SelectedIndex == 1 || spriteBrowserSource.SelectedIndex == 2)
+        if (spriteBrowserSource.SelectedIndex >= 1 && spriteBrowserSource.SelectedIndex <= 4)
         {
             if (map is null) { MessageBox.Show(this, "Open a map before browsing its ground sprites."); return; }
-            ids = map.Tiles.Values.Select(tile => spriteBrowserSource.SelectedIndex == 1 ? (tile.GroundSprite & 0xffff) : (tile.GroundSprite >> 16)).Where(id => id != 0).Distinct().OrderBy(id => id);
+            ids = spriteBrowserSource.SelectedIndex switch
+            {
+                1 => map.Tiles.Values.Select(tile => tile.GroundSprite & 0xffff),
+                2 => map.Tiles.Values.Select(tile => tile.GroundSprite >> 16),
+                3 => map.Tiles.Values.SelectMany(tile => new[] { tile.ForegroundSprite & 0xffff, tile.ForegroundSprite >> 16 }),
+                _ => map.Tiles.Values.SelectMany(tile => tile.SpriteComponents).Select(id => (uint)id)
+            };
+            ids = ids.Where(id => id != 0).Distinct().OrderBy(id => id);
+        }
+        else if (spriteBrowserSource.SelectedIndex == 5)
+        {
+            if (canvas.Sprites is null) { MessageBox.Show(this, "Choose compatible art first."); return; }
+            ids = canvas.Sprites.AvailableSpriteIds();
         }
         else
         {
