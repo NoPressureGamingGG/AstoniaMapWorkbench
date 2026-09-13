@@ -162,6 +162,8 @@ The browser reads the current Uncharted `gx1_mod.zip`, `gx1_patch.zip`, and `gx1
 
 The browser displays the decoded/base art available to the Workbench. Runtime composite or animated IDs may therefore show their base sprite rather than the final client-transformed frame. Unresolved art is omitted from the canvas and reported by **Validate**; the canvas does not draw warning squares over the map.
 
+Clicking a browser thumbnail selects it for placement; it does not search the opened map. Choose **Ground layer 1**, **Ground layer 2**, **Wall / ceiling layer 1**, or **Wall / ceiling layer 2**, then click **Use selected sprite**. The sprite ID is placed in the corresponding Tile editor field and the matching Paint target is selected. Apply it to the current tile or selection from the Tile editor.
+
 Current ZIP PNGs use the same magenta-key transparency, transparent-border cropping, and centered anchor offsets as the Uncharted client. This keeps wall-mounted objects and ground artwork from displaying their source-image rectangles.
 
 ## Validation and saving

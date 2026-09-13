@@ -7,6 +7,8 @@ internal sealed class MainForm : Form
 {
     private readonly TextBox spriteSearch = new() { PlaceholderText = "Sprite ID or range, for example 21400-21499", Dock = DockStyle.Fill };
     private readonly TextBox spriteBrowserRange = new() { Text = "12000-12020", Dock = DockStyle.Fill };
+    private readonly ComboBox spriteBrowserTarget = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
+    private uint? selectedBrowserSprite;
     private readonly FlowLayoutPanel spriteGallery = new() { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8), BackColor = Color.FromArgb(24, 26, 30) };
     private readonly CheckedListBox flagSearch = new() { Dock = DockStyle.Fill, CheckOnClick = true };
     private readonly TextBox templateSearch = new() { PlaceholderText = "Search item or character template", Dock = DockStyle.Fill };
@@ -149,9 +151,11 @@ internal sealed class MainForm : Form
         var rangeLabel = new Label { Text = "Sprite ID or range", AutoSize = true, Padding = new Padding(0, 6, 6, 0) };
         var browse = new Button { Text = "Browse archive", AutoSize = true };
         browse.Click += (_, _) => BrowseSprites();
-        var controls = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 3, AutoSize = true };
-        controls.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); controls.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); controls.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        controls.Controls.Add(rangeLabel, 0, 0); controls.Controls.Add(spriteBrowserRange, 1, 0); controls.Controls.Add(browse, 2, 0);
+        spriteBrowserTarget.Items.AddRange(["Ground layer 1", "Ground layer 2", "Wall / ceiling layer 1", "Wall / ceiling layer 2"]); spriteBrowserTarget.SelectedIndex = 0;
+        var use = new Button { Text = "Use selected sprite", AutoSize = true }; use.Click += (_, _) => UseBrowserSprite();
+        var controls = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 5, AutoSize = true };
+        controls.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); controls.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); controls.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); controls.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); controls.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        controls.Controls.Add(rangeLabel, 0, 0); controls.Controls.Add(spriteBrowserRange, 1, 0); controls.Controls.Add(browse, 2, 0); controls.Controls.Add(spriteBrowserTarget, 3, 0); controls.Controls.Add(use, 4, 0);
         panel.Controls.Add(controls, 0, 0); panel.Controls.Add(spriteGallery, 0, 1);
         return panel;
     }
@@ -524,11 +528,22 @@ internal sealed class MainForm : Form
             var tile = new Panel { Width = 96, Height = 112, Margin = new Padding(4), BackColor = Color.FromArgb(34, 36, 42), Tag = id };
             var preview = new PictureBox { Width = 96, Height = 84, SizeMode = PictureBoxSizeMode.CenterImage, Image = image.Bitmap, Cursor = Cursors.Hand, Tag = id, BackColor = Color.FromArgb(18, 20, 24) };
             var label = new Label { Text = id.ToString(), Dock = DockStyle.Bottom, ForeColor = Color.White, TextAlign = ContentAlignment.MiddleCenter, Height = 24 };
-            preview.Click += (_, _) => { spriteSearch.Text = id.ToString(); SearchSprites(); };
+            preview.Click += (_, _) => SelectBrowserSprite((uint)id);
             preview.DoubleClick += (_, _) => rightTabs.SelectedIndex = 0;
             tile.Controls.Add(preview); tile.Controls.Add(label); spriteGallery.Controls.Add(tile);
         }
         if (spriteGallery.Controls.Count == 0) spriteGallery.Controls.Add(new Label { Text = "No sprites decoded in that range.", ForeColor = Color.White, AutoSize = true });
+    }
+    private void SelectBrowserSprite(uint sprite) { selectedBrowserSprite = sprite; UseBrowserSprite(); status.Text = $"Sprite {sprite} selected for {spriteBrowserTarget.SelectedItem}. Double-click it again to return to the Tile editor."; }
+    private void UseBrowserSprite()
+    {
+        if (selectedBrowserSprite is not { } sprite) return;
+        var target = spriteBrowserTarget.SelectedIndex;
+        if (target == 0) { gs1.Value = sprite; paintScope.SelectedIndex = 1; }
+        else if (target == 1) { gs2.Value = sprite; paintScope.SelectedIndex = 2; }
+        else if (target == 2) { fs1.Value = sprite; paintScope.SelectedIndex = 3; }
+        else { fs2.Value = sprite; paintScope.SelectedIndex = 4; }
+        rightTabs.SelectedIndex = 0;
     }
     private void ShowSpriteBrowser() => rightTabs.SelectedTab = spriteBrowserPage;
     private void SearchFlags()
