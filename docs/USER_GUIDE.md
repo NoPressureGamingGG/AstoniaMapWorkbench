@@ -160,6 +160,8 @@ The original Sprite search searches the opened map for tiles already using a spr
 
 The browser reads the current Uncharted `gx1_mod.zip`, `gx1_patch.zip`, and `gx1.zip` archives when they are found beside this workspace, then falls back to compatible legacy pak art. If neither source is available, choose **Art assets > Choose compatible pak art folder...** and select the directory containing files such as `00000000.pak`.
 
+The browser keeps a persistent **Working group** and **Recent 5** list. Selecting either list repopulates the thumbnail gallery with those sprites. The browser toolbar wraps when the right panel is narrow, keeping **Use selected sprite** accessible.
+
 The browser displays the decoded/base art available to the Workbench. Runtime composite or animated IDs may therefore show their base sprite rather than the final client-transformed frame. Unresolved art is omitted from the canvas and reported by **Validate**; the canvas does not draw warning squares over the map.
 
 Clicking a browser thumbnail selects it for placement; it does not search the opened map. Choose **Ground layer 1**, **Ground layer 2**, **Wall / ceiling layer 1**, or **Wall / ceiling layer 2**, then click **Use selected sprite**. The sprite ID is placed in the corresponding Tile editor field and the matching Paint target is selected. Apply it to the current tile or selection from the Tile editor.

@@ -125,8 +125,8 @@ internal sealed class MainForm : Form
         results.SelectedIndexChanged += (_, _) => { if (results.SelectedItem is Result r) SelectTile(r.Tile.X, r.Tile.Y); };
         templates.SelectedIndexChanged += (_, _) => ApplyTemplateSelection();
         templates.DoubleClick += (_, _) => rightTabs.SelectedIndex = 0;
-        spriteWorkspace.SelectedIndexChanged += (_, _) => { if (spriteWorkspace.SelectedItem is uint sprite) SelectBrowserSprite(sprite); };
-        recentSprites.SelectedIndexChanged += (_, _) => { if (recentSprites.SelectedItem is uint sprite) SelectBrowserSprite(sprite); };
+        spriteWorkspace.SelectedIndexChanged += (_, _) => { if (spriteWorkspace.SelectedItem is uint sprite) SelectPaletteSprite(sprite); ShowSpriteIds(spriteWorkspaceIds); };
+        recentSprites.SelectedIndexChanged += (_, _) => { if (recentSprites.SelectedItem is uint sprite) SelectPaletteSprite(sprite); ShowSpriteIds(recentSpriteIds); };
         spriteWorkspace.DragEnter += (_, e) => e.Effect = e.Data?.GetDataPresent(DataFormats.Text) == true ? DragDropEffects.Copy : DragDropEffects.None;
         spriteWorkspace.DragDrop += (_, e) => { if (uint.TryParse(e.Data?.GetData(DataFormats.Text)?.ToString(), out var sprite)) AddSpriteToWorkspace(sprite); };
 
@@ -168,9 +168,8 @@ internal sealed class MainForm : Form
         spriteBrowserSource.Items.AddRange(["Archive ID/range", "Map Ground 1", "Map Ground 2"]); spriteBrowserSource.SelectedIndex = 0;
         spriteBrowserTarget.Items.AddRange(["Ground layer 1", "Ground layer 2", "Wall / ceiling layer 1", "Wall / ceiling layer 2"]); spriteBrowserTarget.SelectedIndex = 0;
         var use = new Button { Text = "Use selected sprite", AutoSize = true }; use.Click += (_, _) => UseBrowserSprite();
-        var controls = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 6, AutoSize = true };
-        controls.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); controls.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); controls.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); controls.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); controls.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); controls.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        controls.Controls.Add(rangeLabel, 0, 0); controls.Controls.Add(spriteBrowserRange, 1, 0); controls.Controls.Add(browse, 2, 0); controls.Controls.Add(spriteBrowserSource, 3, 0); controls.Controls.Add(spriteBrowserTarget, 4, 0); controls.Controls.Add(use, 5, 0);
+        var controls = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(2) };
+        controls.Controls.Add(rangeLabel); controls.Controls.Add(spriteBrowserRange); controls.Controls.Add(browse); controls.Controls.Add(spriteBrowserSource); controls.Controls.Add(spriteBrowserTarget); controls.Controls.Add(use);
         var groupButtons = new FlowLayoutPanel { AutoSize = true, Controls = { new Label { Text = "Working group: drag thumbnails here", AutoSize = true }, spriteWorkspace, Button("Add selected", (_, _) => { if (selectedBrowserSprite is { } sprite) AddSpriteToWorkspace(sprite); }), Button("Use group sprite", (_, _) => { if (spriteWorkspace.SelectedItem is uint sprite) SelectBrowserSprite(sprite); }) } };
         var recentBar = new FlowLayoutPanel { AutoSize = true, Controls = { new Label { Text = "Recent 5:", AutoSize = true }, recentSprites } };
         panel.Controls.Add(controls, 0, 0); panel.Controls.Add(groupButtons, 0, 1); panel.Controls.Add(recentBar, 0, 2); panel.Controls.Add(spriteGallery, 0, 3);
@@ -585,7 +584,13 @@ internal sealed class MainForm : Form
             if (high - low > 500) { MessageBox.Show(this, "Browse at most 501 sprite IDs at a time."); return; }
             ids = Enumerable.Range((int)low, checked((int)(high - low + 1))).Select(id => (uint)id);
         }
+        ShowSpriteIds(ids);
+    }
+
+    private void ShowSpriteIds(IEnumerable<uint> ids)
+    {
         spriteGallery.Controls.Clear();
+        if (canvas.Sprites is null) { spriteGallery.Controls.Add(new Label { Text = "Choose compatible art first.", ForeColor = Color.White, AutoSize = true }); return; }
         foreach (var id in ids.Take(501))
         {
             var image = canvas.Sprites.Get(id);
@@ -599,6 +604,11 @@ internal sealed class MainForm : Form
             tile.Controls.Add(preview); tile.Controls.Add(label); spriteGallery.Controls.Add(tile);
         }
         if (spriteGallery.Controls.Count == 0) spriteGallery.Controls.Add(new Label { Text = "No sprites decoded in that range.", ForeColor = Color.White, AutoSize = true });
+    }
+    private void SelectPaletteSprite(uint sprite)
+    {
+        selectedBrowserSprite = sprite;
+        status.Text = $"Sprite {sprite} selected from your palette. Choose a target layer, then Use selected sprite.";
     }
     private void SelectBrowserSprite(uint sprite) { selectedBrowserSprite = sprite; AddRecentSprite(sprite); UseBrowserSprite(); status.Text = $"Sprite {sprite} selected for {spriteBrowserTarget.SelectedItem}. Click the map to preview-place it, then Apply to commit."; }
     private void UseBrowserSprite()
