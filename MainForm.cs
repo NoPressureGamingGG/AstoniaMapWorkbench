@@ -49,6 +49,7 @@ internal sealed class MainForm : Form
     private readonly HashSet<string> itemTemplates = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> characterTemplates = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, uint> characterSprites = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, uint> itemSprites = new(StringComparer.OrdinalIgnoreCase);
     private string artDiagnostic = "not checked";
 
     public MainForm(string[]? startupArguments = null)
@@ -173,7 +174,7 @@ internal sealed class MainForm : Form
     {
         try
         {
-            map = MapDocument.Load(path); canvas.Map = map; LoadTemplates(Path.GetDirectoryName(path)!); canvas.CharacterSprites = characterSprites; TryDetectProfile(path); undoStack.Clear(); redoStack.Clear();
+            map = MapDocument.Load(path); canvas.Map = map; LoadTemplates(Path.GetDirectoryName(path)!); canvas.CharacterSprites = characterSprites; canvas.ItemSprites = itemSprites; TryDetectProfile(path); undoStack.Clear(); redoStack.Clear();
             var firstSprite = map.Tiles.Values.SelectMany(tile => tile.SpriteComponents).FirstOrDefault(sprite => sprite != 0);
             artDiagnostic = canvas.Sprites is null ? "no package selected" : canvas.Sprites.Get(firstSprite) is null ? canvas.Sprites.LastError ?? "map sprite missing from package" : $"sprite {firstSprite} decoded";
             findings.Clear(); results.Items.Clear(); details.Clear(); UpdateStatus(); SelectTile(0, 0);
@@ -185,6 +186,7 @@ internal sealed class MainForm : Form
     {
         if (map is null) return;
         selectedTiles.Clear(); selectedTiles.Add(new Point(tileX, tileY)); canvas.SetSelection(selectedTiles); canvas.SelectedTile = new Point(tileX, tileY);
+        canvas.ClearPreview();
         x.Value = tileX; y.Value = tileY; width.Value = 1; height.Value = 1;
         var tile = map.GetTile(tileX, tileY); LoadTile(tile); ShowDetails(tile);
         UpdateSelectionSummary();
@@ -229,6 +231,7 @@ internal sealed class MainForm : Form
         var minY = selectedTiles.Min(tile => tile.Y); var maxY = selectedTiles.Max(tile => tile.Y);
         x.Value = minX; y.Value = minY; width.Value = maxX - minX + 1; height.Value = maxY - minY + 1;
         canvas.SetSelection(selectedTiles); canvas.SelectedTile = new Point(minX, minY);
+        canvas.ClearPreview();
         LoadTile(map!.GetTile(minX, minY)); ShowDetails(map.GetTile(minX, minY));
         UpdateSelectionSummary();
         status.Text = $"{selectedTiles.Count:N0} tiles selected by {kind}. Edit fields, then apply to the selection.";
@@ -386,7 +389,7 @@ internal sealed class MainForm : Form
         if ((targets.Length > 1 || paintScope.SelectedIndex == 0) && MessageBox.Show(this, summary + "\r\n\r\nApply this change?", "Confirm map edit", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
         foreach (var state in before) ApplyValues(map!.GetTile(state.X, state.Y));
         var change = new TileChange(before, before.Select(state => TileSnapshot.Capture(map!.GetTile(state.X, state.Y))).ToList()); undoStack.Push(change); redoStack.Clear();
-        canvas.RefreshTile(); ShowDetails(map!.GetTile((int)x.Value, (int)y.Value)); UpdateStatus();
+        canvas.ClearPreview(); canvas.RefreshTile(); ShowDetails(map!.GetTile((int)x.Value, (int)y.Value)); UpdateStatus();
     }
 
     private void PreviewEdit()
@@ -395,6 +398,7 @@ internal sealed class MainForm : Form
         var targets = GetEditTargets();
         var before = targets.Select(point => TileSnapshot.Capture(map!.GetTile(point.X, point.Y))).ToList();
         rightTabs.SelectedIndex = 0;
+        canvas.SetPreview(PreviewSnapshots(targets).Select(snapshot => new MapTile { X = snapshot.X, Y = snapshot.Y, Item = snapshot.Item, Character = snapshot.Character }));
         MessageBox.Show(this, BuildChangeSummary(before, PreviewSnapshots(targets), targets.Length), "Map edit preview", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
@@ -611,8 +615,19 @@ internal sealed class MainForm : Form
 
     private void LoadTemplates(string zoneDirectory)
     {
-        itemTemplates.Clear(); characterTemplates.Clear(); characterSprites.Clear(); var generic = Path.Combine(Directory.GetParent(zoneDirectory)?.FullName ?? zoneDirectory, "generic");
-        foreach (var directory in new[] { zoneDirectory, generic }.Where(Directory.Exists)) { foreach (var file in Directory.EnumerateFiles(directory, "*.itm")) LoadTemplateNames(file, itemTemplates); foreach (var file in Directory.EnumerateFiles(directory, "*.chr")) { LoadTemplateNames(file, characterTemplates); LoadCharacterSprites(file); } }
+        itemTemplates.Clear(); characterTemplates.Clear(); characterSprites.Clear(); itemSprites.Clear(); var generic = Path.Combine(Directory.GetParent(zoneDirectory)?.FullName ?? zoneDirectory, "generic");
+        foreach (var directory in new[] { zoneDirectory, generic }.Where(Directory.Exists)) { foreach (var file in Directory.EnumerateFiles(directory, "*.itm")) { LoadTemplateNames(file, itemTemplates); LoadItemSprites(file); } foreach (var file in Directory.EnumerateFiles(directory, "*.chr")) { LoadTemplateNames(file, characterTemplates); LoadCharacterSprites(file); } }
+    }
+
+    private void LoadItemSprites(string file)
+    {
+        string? current = null;
+        foreach (var raw in File.ReadLines(file))
+        {
+            var line = raw.Split('#', 2)[0].Trim();
+            if (line.EndsWith(':') && line.Length > 1 && !line.Contains(' ')) { current = line[..^1]; continue; }
+            if (current is not null && line.StartsWith("sprite=", StringComparison.OrdinalIgnoreCase) && uint.TryParse(line[7..].Trim(), out var sprite)) { itemSprites[current] = sprite; current = null; }
+        }
     }
 
     private void LoadCharacterSprites(string file)

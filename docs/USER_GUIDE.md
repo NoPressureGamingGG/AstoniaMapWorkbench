@@ -112,6 +112,8 @@ The editor starts in **Flags only** mode to prevent accidental sprite replacemen
 
 Clicking a template result or double-clicking a sprite returns to the Tile editor. **Preview changes** also returns to the Tile editor before showing its diff summary.
 
+For Item-only and NPC-only edits, the preview also draws the selected template's client-resolved sprite on the selected tile(s). Cancelling the confirmation leaves the map unchanged and clears no undo history.
+
 The Tile editor shows the current selection count and affected layer. **Preview changes** reports the operation, tile count, number of tiles that will change, and affected layer without modifying the map. Applying a multi-tile edit shows the same summary and asks for confirmation. Whole tile replacement always shows an explicit destructive warning. Undo and redo cover applied tile edits, region paste, region clearing, and tile paste; previewing or cancelling never creates an undo entry.
 
 ### Region copy/paste and large deletion

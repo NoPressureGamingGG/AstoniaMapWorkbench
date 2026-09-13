@@ -26,6 +26,8 @@ internal sealed class MapCanvas : Control
     private Keys selectionModifiers;
     private SpriteArchive? sprites;
     private IReadOnlyDictionary<string, uint> characterSprites = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyDictionary<string, uint> itemSprites = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyDictionary<Point, MapTile> previewTiles = new Dictionary<Point, MapTile>();
 
     public event EventHandler<TileInteraction>? TileInteraction;
 
@@ -92,6 +94,12 @@ internal sealed class MapCanvas : Control
         set { characterSprites = value; Invalidate(); }
     }
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public IReadOnlyDictionary<string, uint> ItemSprites
+    {
+        get => itemSprites;
+        set { itemSprites = value; Invalidate(); }
+    }
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public bool ShowGrid { get; set; }
 
     public MapCanvas()
@@ -120,6 +128,7 @@ internal sealed class MapCanvas : Control
         if (ShowCharacters) DrawCharacters(e.Graphics);
         DrawLayer(e.Graphics, tile => LowerWalls ? sprites?.GetCutSprite((ushort)(tile.ForegroundSprite & 0xffff)) ?? (tile.ForegroundSprite & 0xffff) : tile.ForegroundSprite & 0xffff, -9, !ShowWalls);
         DrawLayer(e.Graphics, tile => LowerWalls ? sprites?.GetCutSprite((ushort)(tile.ForegroundSprite >> 16)) ?? (tile.ForegroundSprite >> 16) : tile.ForegroundSprite >> 16, 1, !ShowWalls);
+        DrawItems(e.Graphics);
         DrawOverlays(e.Graphics);
         DrawSelectionPreview(e.Graphics);
     }
@@ -200,6 +209,9 @@ internal sealed class MapCanvas : Control
 
     public void RefreshTile() => Invalidate();
 
+    public void SetPreview(IEnumerable<MapTile> tiles) => previewTiles = tiles.ToDictionary(tile => new Point(tile.X, tile.Y));
+    public void ClearPreview() { previewTiles = new Dictionary<Point, MapTile>(); Invalidate(); }
+
     public void SetSelection(IEnumerable<Point> tiles)
     {
         selectedTiles.Clear();
@@ -276,7 +288,7 @@ internal sealed class MapCanvas : Control
     private void DrawCharacters(Graphics graphics)
     {
         if (map is null || sprites is null) return;
-        foreach (var tile in map.Tiles.Values.OrderBy(tile => tile.X + tile.Y).ThenBy(tile => tile.X))
+        foreach (var tile in PreviewOrMapTiles().Where(tile => tile.Character is not null).OrderBy(tile => tile.X + tile.Y).ThenBy(tile => tile.X))
         {
             if (tile.Character is null || !characterSprites.TryGetValue(tile.Character, out var sprite) || sprite == 0) continue;
             var image = sprites.GetCharacterFrame(sprite);
@@ -287,6 +299,21 @@ internal sealed class MapCanvas : Control
             graphics.DrawImage(image.Bitmap, new RectangleF(anchor.X + image.XOffset * scale, anchor.Y + image.YOffset * scale, image.Bitmap.Width * scale, image.Bitmap.Height * scale));
         }
     }
+
+    private void DrawItems(Graphics graphics)
+    {
+        if (map is null || sprites is null) return;
+        foreach (var tile in PreviewOrMapTiles().Where(tile => tile.Item is not null).OrderBy(tile => tile.X + tile.Y).ThenBy(tile => tile.X))
+        {
+            if (!itemSprites.TryGetValue(tile.Item!, out var sprite) || sprite == 0) continue;
+            var image = sprites.Get(sprite); if (image is null) continue;
+            var anchor = TileToScreen(tile.X, tile.Y); if (!InViewport(anchor)) continue;
+            var scale = tileWidth / NativeTileWidth;
+            graphics.DrawImage(image.Bitmap, new RectangleF(anchor.X + image.XOffset * scale, anchor.Y + (image.YOffset - 8) * scale, image.Bitmap.Width * scale, image.Bitmap.Height * scale));
+        }
+    }
+
+    private IEnumerable<MapTile> PreviewOrMapTiles() => previewTiles.Count == 0 ? map?.Tiles.Values ?? Enumerable.Empty<MapTile>() : previewTiles.Values;
 
     private void DrawOverlays(Graphics graphics)
     {
