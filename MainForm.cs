@@ -202,13 +202,13 @@ internal sealed class MainForm : Form
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "Could not open map", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 
-    private void SelectTile(int tileX, int tileY)
+    private void SelectTile(int tileX, int tileY, bool loadPaintInputs = true)
     {
         if (map is null) return;
         selectedTiles.Clear(); selectedTiles.Add(new Point(tileX, tileY)); canvas.SetSelection(selectedTiles); canvas.SelectedTile = new Point(tileX, tileY);
         canvas.ClearPreview();
         x.Value = tileX; y.Value = tileY; width.Value = 1; height.Value = 1;
-        var tile = map.GetTile(tileX, tileY); LoadTile(tile); ShowDetails(tile);
+        var tile = map.GetTile(tileX, tileY); LoadTile(tile, loadPaintInputs); ShowDetails(tile);
         UpdateSelectionSummary();
     }
 
@@ -217,7 +217,7 @@ internal sealed class MainForm : Form
         if (map is null) return;
         if (placeSpriteMode.Checked && selectedBrowserSprite is not null && (interaction.Modifiers & (Keys.Control | Keys.Shift)) == 0)
         {
-            SelectTile(interaction.Tile.X, interaction.Tile.Y);
+            SelectTile(interaction.Tile.X, interaction.Tile.Y, false);
             canvas.SetPreview(PreviewMaps([interaction.Tile]));
             status.Text = $"Previewing sprite {selectedBrowserSprite} at ({interaction.Tile.X},{interaction.Tile.Y}). Apply to commit.";
             return;
@@ -263,7 +263,7 @@ internal sealed class MainForm : Form
         x.Value = minX; y.Value = minY; width.Value = maxX - minX + 1; height.Value = maxY - minY + 1;
         canvas.SetSelection(selectedTiles); canvas.SelectedTile = new Point(minX, minY);
         canvas.ClearPreview();
-        LoadTile(map!.GetTile(minX, minY)); ShowDetails(map.GetTile(minX, minY));
+        LoadTile(map!.GetTile(minX, minY), !freeDraw.Checked && !placeSpriteMode.Checked); ShowDetails(map.GetTile(minX, minY));
         UpdateSelectionSummary();
         status.Text = $"{selectedTiles.Count:N0} tiles selected by {kind}. Edit fields, then apply to the selection.";
     }
@@ -397,10 +397,13 @@ internal sealed class MainForm : Form
         undoStack.Push(new TileChange(before, after)); redoStack.Clear(); canvas.RefreshTile(); UpdateStatus();
     }
 
-    private void LoadTile(MapTile tile)
+    private void LoadTile(MapTile tile, bool loadPaintInputs = true)
     {
-        gs1.Value = (ushort)(tile.GroundSprite & 0xffff); gs2.Value = (ushort)(tile.GroundSprite >> 16); fs1.Value = (ushort)(tile.ForegroundSprite & 0xffff); fs2.Value = (ushort)(tile.ForegroundSprite >> 16);
-        item.Text = tile.Item ?? ""; character.Text = tile.Character ?? "";
+        if (loadPaintInputs)
+        {
+            gs1.Value = (ushort)(tile.GroundSprite & 0xffff); gs2.Value = (ushort)(tile.GroundSprite >> 16); fs1.Value = (ushort)(tile.ForegroundSprite & 0xffff); fs2.Value = (ushort)(tile.ForegroundSprite >> 16);
+            item.Text = tile.Item ?? ""; character.Text = tile.Character ?? "";
+        }
         activeFlags.Text = tile.Flags.Count == 0 ? "(none)" : string.Join(Environment.NewLine, tile.Flags.OrderBy(flag => flag));
         for (var i = 0; i < editFlags.Items.Count; i++)
         {
