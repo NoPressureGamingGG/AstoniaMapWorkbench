@@ -1,5 +1,7 @@
 # Astonia Map Workbench
 
+**Tester preview — 2026-10-03.** This branch contains work awaiting interactive acceptance and independent audit. Use copied/staged maps, report bugs through GitHub Issues, and read [preview test scope](docs/TESTING_PREVIEW.md). Successful compilation does not certify map/save or visual behavior.
+
 A local Windows map editor and review tool for Astonia-compatible Server 3 map data.
 
 The Workbench is designed to be useful without access to a live server. It opens staged `.map` files, reads nearby `.chr`/`.itm` templates, previews compatible client art, validates authoring data, and saves reviewable workspace outputs.

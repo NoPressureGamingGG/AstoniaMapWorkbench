@@ -1,6 +1,18 @@
 # Development and Release Process
 
-The public repository contains only completed, tested Workbench updates.
+Stable updates contain completed, tested Workbench changes. Explicitly authorized tester previews follow the exception below.
+
+## Owner-authorized tester preview exception — 2026-10-03
+
+The owner explicitly authorized publishing the current editor for external testing,
+bug reports and suggestions before interactive acceptance and independent audit
+are complete. Preview branches may publish a Release-buildable source snapshot
+with updated guide/changelog and explicit known unverified workflows. This is a
+tester preview, not a completed stable update. Never bundle private assets, maps,
+credentials, generated output or local handoffs. Stable/main promotion retains
+the behavior-testing requirements below. No server deployment is authorized by
+publishing this editor. See docs/TESTING_PREVIEW.md for this snapshot's gates.
+
 
 ## Local workflow
 

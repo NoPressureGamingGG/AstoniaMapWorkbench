@@ -121,14 +121,11 @@ internal sealed class MapCanvas : Control
 
         if (ShowGrid) DrawGrid(e.Graphics);
 
-        // Legacy order: GS1, GS2, FS1, FS2. Within each layer, map depth is
-        // x+y, so sprites naturally overlap toward the player-facing edge.
+        // The client draws ground layers separately, then depth-sorts all GME
+        // sprites (walls, items, and characters) together.
         DrawLayer(e.Graphics, tile => tile.GroundSprite & 0xffff, -10);
         DrawLayer(e.Graphics, tile => tile.GroundSprite >> 16, 0);
-        if (ShowCharacters) DrawCharacters(e.Graphics);
-        DrawLayer(e.Graphics, tile => LowerWalls ? sprites?.GetCutSprite((ushort)(tile.ForegroundSprite & 0xffff)) ?? (tile.ForegroundSprite & 0xffff) : tile.ForegroundSprite & 0xffff, -9, !ShowWalls);
-        DrawLayer(e.Graphics, tile => LowerWalls ? sprites?.GetCutSprite((ushort)(tile.ForegroundSprite >> 16)) ?? (tile.ForegroundSprite >> 16) : tile.ForegroundSprite >> 16, 1, !ShowWalls);
-        DrawItems(e.Graphics);
+        DrawGameLayerSprites(e.Graphics);
         DrawOverlays(e.Graphics);
         DrawSelectionPreview(e.Graphics);
     }
@@ -289,31 +286,50 @@ internal sealed class MapCanvas : Control
         }
     }
 
-    private void DrawCharacters(Graphics graphics)
+    private void DrawGameLayerSprites(Graphics graphics)
     {
         if (map is null || sprites is null) return;
-        foreach (var tile in PreviewOrMapTiles().Where(tile => tile.Character is not null).OrderBy(tile => tile.X + tile.Y).ThenBy(tile => tile.X))
+        var drawables = new List<(float SortY, float SortX, uint Sprite, SpriteArchive.SpriteImage Image, PointF Anchor, float DrawYOffset)>();
+        var scale = tileWidth / NativeTileWidth;
+
+        foreach (var tile in PreviewOrMapTiles())
         {
-            if (tile.Character is null || !characterSprites.TryGetValue(tile.Character, out var sprite) || sprite == 0) continue;
-            var image = sprites.GetCharacterFrame(sprite);
-            if (image is null) continue;
             var anchor = TileToScreen(tile.X, tile.Y);
             if (!InViewport(anchor)) continue;
-            var scale = tileWidth / NativeTileWidth;
-            graphics.DrawImage(image.Bitmap, new RectangleF(anchor.X + image.XOffset * scale, anchor.Y + image.YOffset * scale, image.Bitmap.Width * scale, image.Bitmap.Height * scale));
-        }
-    }
 
-    private void DrawItems(Graphics graphics)
-    {
-        if (map is null || sprites is null) return;
-        foreach (var tile in PreviewOrMapTiles().Where(tile => tile.Item is not null).OrderBy(tile => tile.X + tile.Y).ThenBy(tile => tile.X))
+            var lowerWall = tile.ForegroundSprite & 0xffff;
+            if (LowerWalls && lowerWall != 0) lowerWall = sprites.GetCutSprite((ushort)lowerWall);
+            AddSprite(lowerWall, -9, -9, true);
+            var upperWall = tile.ForegroundSprite >> 16;
+            if (LowerWalls && upperWall != 0) upperWall = sprites.GetCutSprite((ushort)upperWall);
+            AddSprite(upperWall, 2, 1, true);
+
+            if (tile.Item is not null && itemSprites.TryGetValue(tile.Item, out var itemSprite))
+                AddSprite(itemSprite, -8, -8, false);
+            if (ShowCharacters && tile.Character is not null && characterSprites.TryGetValue(tile.Character, out var characterSprite))
+            {
+                var characterImage = sprites.GetCharacterFrame(characterSprite);
+                if (characterImage is not null) AddSprite(characterSprite, 0, 0, false, characterImage);
+            }
+
+            void AddSprite(uint sprite, float sortYOffset, float drawYOffset, bool wall, SpriteArchive.SpriteImage? image = null)
+            {
+                if (sprite == 0) return;
+                if (wall && !ShowWalls && sprites.IsWallSprite(sprite)) return;
+                image ??= sprites.Get(sprite);
+                if (image is null) return;
+                drawables.Add((anchor.Y + sortYOffset * scale, anchor.X, sprite, image, anchor, drawYOffset));
+            }
+        }
+
+        foreach (var drawable in drawables.OrderBy(drawable => drawable.SortY).ThenBy(drawable => drawable.SortX).ThenBy(drawable => drawable.Sprite))
         {
-            if (!itemSprites.TryGetValue(tile.Item!, out var sprite) || sprite == 0) continue;
-            var image = sprites.Get(sprite); if (image is null) continue;
-            var anchor = TileToScreen(tile.X, tile.Y); if (!InViewport(anchor)) continue;
-            var scale = tileWidth / NativeTileWidth;
-            graphics.DrawImage(image.Bitmap, new RectangleF(anchor.X + image.XOffset * scale, anchor.Y + (image.YOffset - 8) * scale, image.Bitmap.Width * scale, image.Bitmap.Height * scale));
+            var image = drawable.Image;
+            graphics.DrawImage(image.Bitmap, new RectangleF(
+                drawable.Anchor.X + image.XOffset * scale,
+                drawable.Anchor.Y + (image.YOffset + drawable.DrawYOffset) * scale,
+                image.Bitmap.Width * scale,
+                image.Bitmap.Height * scale));
         }
     }
 

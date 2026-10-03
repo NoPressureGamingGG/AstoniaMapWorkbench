@@ -28,6 +28,23 @@ internal sealed class SpriteArchive
         return ids.OrderBy(id => id);
     }
 
+    public IEnumerable<uint> AvailableCharacterIds()
+    {
+        var frameIds = new HashSet<uint>(AvailableSpriteIds());
+        foreach (var file in Directory.EnumerateFiles(pakDirectory, "*.pak", SearchOption.TopDirectoryOnly))
+        {
+            try { frameIds.UnionWith(PakFile.Load(file).SpriteIds); }
+            catch (Exception ex) { LastError = $"Could not index {Path.GetFileName(file)}: {ex.Message}"; }
+        }
+
+        return frameIds
+            .Where(id => id >= 100000 && (id - 100000) % 1000 == 0)
+            .Select(id => (id - 100000) / 1000)
+            .Concat(characterBaseSprites.Keys)
+            .Distinct()
+            .OrderBy(id => id);
+    }
+
     public SpriteArchive(string pakDirectory)
     {
         if (!Directory.Exists(pakDirectory)) throw new DirectoryNotFoundException($"Sprite package directory not found: {pakDirectory}");
@@ -70,7 +87,7 @@ internal sealed class SpriteArchive
     }
 
     private static bool IsWallFamily(uint sprite) =>
-        sprite is >= 13000 and <= 15999 or >= 17000 and <= 17043 or >= 22000 and <= 23238 or >= 59000 and <= 59999;
+        sprite is >= 13000 and <= 15999 or >= 17000 and <= 17043 or >= 21000 and <= 21028 or >= 22000 and <= 23238 or >= 59000 and <= 59999;
 
     private SpriteImage? TryGetCurrent(uint sprite)
     {
@@ -278,6 +295,8 @@ internal sealed class SpriteArchive
             finally { bitmap.UnlockBits(locked); }
             return new SpriteImage(bitmap, xOffset, yOffset);
         }
+
+        public IEnumerable<uint> SpriteIds => entries.Keys;
 
         private static byte[] Inflate(byte[] compressed, int expectedLength)
         {

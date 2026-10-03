@@ -14,12 +14,16 @@ The editor remembers its window size, panel splitter positions, and zoom level i
 
 The editor launches maximized on the monitor containing the mouse pointer. This prevents a saved window rectangle from opening between dual monitors. Panel splitter positions and zoom are still restored.
 
+On first launch, a skippable **Map Editing Tutorial** opens beside the editor. It walks through opening a map, finding and browsing a sprite, making a layer-specific change, and validating/saving. Choose **Skip tutorial** or close it to dismiss; reopen it later from **Help > Map editing tutorial...**.
+
 ## Open a map
 
 1. Choose **File > Open map...**.
 2. Select a Server 3 `.map` file, normally under `zones/<area>/`.
 3. The editor loads nearby `.chr` and `.itm` template names for validation.
 4. If the map is inside a Server 3 checkout, the editor attempts to detect that checkout and build a profile automatically.
+
+Use **File > Open recent maps** to reopen one of the three most recently opened maps. The list is remembered between launches and skips files that have been moved or deleted; hover an entry to see its full path.
 
 Maps containing comments or directives that the editor cannot preserve open in **INSPECTION ONLY** mode. Use **Save verbatim workspace copy...** for a safe copy. Do not deploy an inspection-only map after editing it outside the Workbench without reviewing the original grammar.
 
@@ -67,12 +71,38 @@ Choose **Server profile > Save active profile...** to save the currently detecte
 - **Ctrl-drag:** draw a rectangular selection window. If the pointer reaches a canvas edge while dragging, the viewport auto-pans so the selection can continue beyond the visible area.
 - **Shift-click:** select every tile containing the clicked tile's matching sprite on the same ground or foreground layer. It does not match unrelated layers.
 - **Show walls / ceilings:** toggle foreground layers independently, similar to lowering walls for room inspection. This changes only the preview.
-- **Lower walls (F8 view):** resolves current-client composite IDs before applying the cut-sprite transformation to eligible wall sprites while leaving tables, chairs, and other non-cut foreground objects visible. This is a preview equivalent of the in-game F8 command. Some walls intentionally have no cut variant and will remain full height.
+- **Preview cut wall variants:** applies configured cut sprites to foreground wall layers in this static preview. It does not simulate the client's player-position and neighboring-tile rules. In the client, F8 toggles `nocut` and disables automatic wall cutting; it does not enable the cut view.
 - **Show NPCs:** toggle previews of `ch=` characters independently. NPCs are resolved from the `sprite=` value in their `.chr` template; this changes only the preview.
 
-The map canvas uses the legacy isometric layer order: ground 1, ground 2, foreground 1, and foreground 2.
+The map canvas draws ground 1 and ground 2 first, then depth-sorts foreground sprites, items, and characters together to match the client's shared map-object layer. Sprite pixels remain a static preview: the live client can additionally animate sprites and apply per-tile lighting, color effects, character state, and runtime offsets.
+
+The **Tile details** tab lists Ground 1, Ground 2, Wall / ceiling 1, and Wall / ceiling 2 IDs separately. Ground sprites are not processed by the client's F8 wall-cut routine. Foreground slots also show the cut-preview ID configured for that sprite, when available.
 
 The Workbench also recognizes the Server 3 extended wall IDs `59155`-`59158` and previews them through their client base sprites `14030`-`14033` when the raw extended archive block is not present. The live client may apply additional color, lighting, animation, or metadata transformations that are not visible in a static Workbench preview.
+
+## First map-edit tutorial
+
+The interactive tutorial is available at **Help > Map editing tutorial...**. The Workbench edits existing `.map` files; it does not currently have a **New blank map** command. To start a new design, open a compatible map to use as a template, then save your work to a different workspace path. You can also copy a useful region from another map.
+
+### Place a ground sprite
+
+1. Choose **File > Open map...** and open a Server 3 map. Check the status bar to confirm which source you opened. If the map says **INSPECTION ONLY**, do not try to edit or deploy it; use a compatible editable map instead.
+2. Click one tile on the canvas to select it. To select a rectangle, hold **Ctrl** and drag. A normal left-drag pans the map.
+3. Open the **Sprite Browser** tab. Choose **Map Ground 1** or **Map Ground 2** as the source to browse ground art already in the map, or choose the full client art catalog to discover other sprites.
+4. Click a thumbnail, choose **Ground layer 1** or **Ground layer 2** as its placement layer, then choose **Use selected sprite**. The Tile editor receives that sprite and paint target.
+5. Select **Preview changes** to review the affected tiles and layer. Choose **Apply tile / rectangle** to commit the preview. Use **Undo** if the result is not what you intended.
+
+### What the layers mean
+
+Each map tile has four sprite slots. **Ground layer 1** is the first ground image; **Ground layer 2** is drawn over it for additional ground art or detail. They are two visual layers, not two elevations or collision settings. **Wall / ceiling layer 1** and **Wall / ceiling layer 2** work the same way for foreground art. The map stores the two ground IDs together as `gsprite` and the two wall/ceiling IDs as `fsprite`.
+
+A “block” in the editor is usually a tile (one square of the map grid). Assigning a sprite places its picture in a layer on that tile. The picture alone does not necessarily make the tile block movement, sight, or sound. Those behaviors are controlled separately with **Static flags** such as `MF_MOVEBLOCK`, `MF_SIGHTBLOCK`, and `MF_SOUNDBLOCK`, or by the placed item's server behavior. To change flags, select the tile(s), set **Paint target > Flags only**, adjust the Static flags checklist, preview, and apply. Runtime-managed flags are not valid static authoring targets.
+
+Use **Ground layer 1/2** or **Wall / ceiling layer 1/2** for a single-layer edit so the other layers remain untouched. **Whole tile (replace all)** replaces multiple kinds of tile data at once and should only be used when that is intended.
+
+### Save and check your work
+
+Choose **Validate** to review parser, flag, template, and sprite findings. Then choose **File > Save edited workspace map...** and save to a new path outside the canonical server checkout. Review the saved map diff before promoting it into a server `zones` directory. Saving in the Workbench does not deploy the map or change a running server; test approved changes in staging.
 
 ## Editing a selection
 
@@ -96,6 +126,10 @@ Choose **Paint target > Flags only**, then click **Apply tile / rectangle**. The
 4. Choose **Paint target > Whole tile** and click **Apply tile / rectangle**.
 
 The map stores the template name (`it=` or `ch=`), not a live runtime object. The destination area's `.itm`/`.chr` templates must contain that name. Use **Validate** before saving and deployment.
+
+### NPC build drafts
+
+Choose **Edit > Create NPC build draft...** to prepare an engineer handoff for a new or revised NPC. Hover anywhere over each small circular `?` marker for a quick field definition. The Driver ID description updates beside the number; the catalog is based on Server 3.0S, and most non-generic drivers are specific to a named NPC, quest, or area. Open a map first to load its area and generic `.chr` templates for **Base .chr template**. The selected sprite ID and a thumbnail stay visible beside **Browse sprites...**; use the picker to search and preview available character sprites instead of memorizing IDs. The form also records optional identity/driver changes, character flags, `V_*` overrides, carried item/spell template names, and behavior notes. It exports a `.npcbuild.json` proposal and does not modify `.chr`, `.map`, or server files. Have the engineer review and translate the proposal into the target area's `.chr` data, then add its `ch=` placement to the map and validate.
 
 ### Layer commands
 
@@ -153,24 +187,25 @@ All clearing operations are undoable.
 
 The original Sprite search searches the opened map for tiles already using a sprite ID. For visual discovery, open the **Sprite browser** tab:
 
-1. Enter one sprite ID or a range, for example `12000-12020`.
-2. Choose **Browse archive**.
-3. Review the decoded thumbnails from the legacy `pak` folder.
-4. Click a thumbnail to search the opened map for all tiles using that sprite.
+1. Enter a start ID. The end defaults to 500 IDs later and remains editable; the browser can show up to 2,000 IDs per browse. Press **Enter** in either ID field or click **Browse archive**.
+2. Review the decoded thumbnails.
+3. Click a thumbnail to select that sprite for placement. It does not search the opened map.
 
 The browser reads the current Uncharted `gx1_mod.zip`, `gx1_patch.zip`, and `gx1.zip` archives when they are found beside this workspace, then falls back to compatible legacy pak art. If neither source is available, choose **Art assets > Choose compatible pak art folder...** and select the directory containing files such as `00000000.pak`.
 
-The browser keeps a persistent **Working group** and **Recent 5** list. Selecting either list repopulates the thumbnail gallery with those sprites. The browser toolbar wraps when the right panel is narrow, keeping **Use selected sprite** accessible.
+The browser keeps a persistent **Working group** and **Recent 5** list. Selecting either list repopulates the thumbnail gallery with those sprites. A **Selected sprite** thumbnail and ID appear in a dedicated panel to the right of **Recent 5**.
 
 The browser displays the decoded/base art available to the Workbench. Runtime composite or animated IDs may therefore show their base sprite rather than the final client-transformed frame. Unresolved art is omitted from the canvas and reported by **Validate**; the canvas does not draw warning squares over the map.
 
-Clicking a browser thumbnail selects it for placement; it does not search the opened map. Choose **Ground layer 1**, **Ground layer 2**, **Wall / ceiling layer 1**, or **Wall / ceiling layer 2**, then click **Use selected sprite**. The sprite ID is placed in the corresponding Tile editor field and the matching Paint target is selected. Apply it to the current tile or selection from the Tile editor.
+Clicking a browser thumbnail selects it for inspection and updates the **Selected sprite** preview; it does not change the map or activate painting. Choose **Ground layer 1**, **Ground layer 2**, **Wall / ceiling layer 1**, or **Wall / ceiling layer 2**, then explicitly click **Use selected sprite** to load the ID into the corresponding Tile editor field and select its Paint target. Then preview and apply it to the map. If there is an uncommitted brush preview, the editor asks before discarding it to load a different sprite.
 
-Use the browser source selector to browse an Archive ID/range, the sprites currently used by **Map Ground 1**, **Map Ground 2**, or **Map walls / foreground**, every sprite used anywhere in the open map, or the complete discoverable current client art catalog. The source selector controls what is shown; the placement selector controls which map layer receives the chosen sprite. The last three sources require no sprite-ID knowledge.
+Enter the sprite ID or range in the clearly labeled box under **Find sprite in opened map**. **Find map tiles** searches the open map; **Browse ID / range** carries the same entry directly into the Sprite Browser. **Browse selected tiles** jumps straight to sprites in the current selection or X/Y/Width/Height rectangle. The browser source selector also offers sprites currently used by **Map Ground 1**, **Map Ground 2**, or **Map walls / foreground**, every sprite used anywhere in the open map, or the complete discoverable current client art catalog. **Selection sprites** scans all four map sprite slots in the exact Ctrl-drag selection; with a single tile selected, it uses the Tile editor's X/Y/Width/Height rectangle. The source selector controls what is shown; the placement selector controls which map layer receives the chosen sprite. Map-based sources require an open map.
+
+Gallery results are loaded 200 thumbnails at a time. Choose **Show next 200** to continue through large ranges or the full client art catalog; this avoids creating thousands of image controls at once. Archive ID/ranges are limited to 2,000 IDs per browse.
 
 The browser keeps a persistent **Working group** and **Recent 5** list in `%LOCALAPPDATA%/AstoniaMapWorkbench/sprite-workspace.json`. Drag a thumbnail into Working group, or use **Add selected**. Select a group/recent sprite to reuse it without searching again.
 
-Selecting a sprite also enables **Click-to-place preview**. Click multiple map tiles and/or Ctrl-drag multiple rectangles to accumulate one continuous pending brush stroke. The sprite remains previewed in every chosen square until **Apply tile / rectangle** commits it. Normal click placement is preview-only until Apply; Ctrl-drag and Shift-click remain available for selection workflows.
+To paint directly from the browser, explicitly enable **Click-to-place preview** after loading a sprite with **Use selected sprite**. Click map tiles and/or Ctrl-drag rectangles to accumulate a pending brush stroke. The sprite remains previewed in every chosen square until **Apply tile / rectangle** commits it. Normal click placement is preview-only until Apply; Ctrl-drag and Shift-click remain available for selection workflows.
 
 The Sprite Browser itself contains the full workflow: select a highlighted thumbnail, choose the placement layer, enable **Free draw preview**, paint by Ctrl-drag or click, and use **Apply preview** without switching to Tile editor. The Tile editor remains available as a separate tab.
 

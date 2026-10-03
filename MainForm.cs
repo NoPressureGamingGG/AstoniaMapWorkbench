@@ -5,18 +5,35 @@ namespace AstoniaMapWorkbench;
 
 internal sealed class MainForm : Form
 {
-    private readonly TextBox spriteSearch = new() { PlaceholderText = "Sprite ID or range, for example 21400-21499", Dock = DockStyle.Fill };
-    private readonly TextBox spriteBrowserRange = new() { Text = "12000-12020", Dock = DockStyle.Fill };
+    private readonly TextBox spriteSearch = new() { PlaceholderText = "Enter sprite ID or range, e.g. 21006", Dock = DockStyle.Fill };
+    private const int MaxSpriteBrowserResults = 2000;
+    private const int SpriteGalleryPageSize = 200;
+    private readonly TextBox spriteBrowserStart = new() { Text = "12000", Width = 88, PlaceholderText = "Start ID" };
+    private readonly TextBox spriteBrowserEnd = new() { Text = "12500", Width = 88, PlaceholderText = "End ID" };
+    private readonly ToolTip spriteBrowserToolTip = new() { AutoPopDelay = 12000, InitialDelay = 400, ReshowDelay = 100, ShowAlways = true };
+    private bool updatingSpriteBrowserRange;
+    private bool spriteBrowserEndWasEdited;
     private readonly ComboBox spriteBrowserSource = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 130 };
     private readonly ComboBox spriteBrowserTarget = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
     private uint? selectedBrowserSprite;
     private readonly FlowLayoutPanel spriteGallery = new() { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8), BackColor = Color.FromArgb(24, 26, 30) };
     private readonly ListBox spriteWorkspace = new() { Height = 54, Width = 230, AllowDrop = true };
-    private readonly ListBox recentSprites = new() { Height = 54, Width = 180 };
+    private readonly ListBox recentSprites = new() { Height = 38, Width = 108 };
+    private readonly PictureBox recentlySelectedPreview = new() { Width = 36, Height = 36, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(24, 26, 30) };
+    private readonly Label recentlySelectedId = new() { AutoSize = true, Text = "None", AutoEllipsis = true, Width = 66, Margin = new Padding(4, 10, 2, 2) };
+    private readonly Button showMoreSprites = new() { Text = "Show next 200", AutoSize = true, Enabled = false };
+    private readonly Label spriteBrowserResultCount = new() { AutoSize = true, Text = "" };
+    private readonly List<uint> spriteBrowserResultIds = [];
+    private int renderedSpriteCount;
     private readonly CheckBox placeSpriteMode = new() { Text = "Click-to-place preview", AutoSize = true };
     private readonly List<uint> spriteWorkspaceIds = [];
     private readonly LinkedList<uint> recentSpriteIds = [];
     private readonly string spriteWorkspacePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AstoniaMapWorkbench", "sprite-workspace.json");
+    private readonly string recentMapsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AstoniaMapWorkbench", "recent-maps.json");
+    private readonly string mapTutorialStatePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AstoniaMapWorkbench", "map-tutorial-dismissed");
+    private readonly List<string> recentMapPaths = [];
+    private ToolStripMenuItem? recentMapsMenu;
+    private MapEditingTutorialForm? mapTutorial;
     private readonly CheckedListBox flagSearch = new() { Dock = DockStyle.Fill, CheckOnClick = true };
     private readonly TextBox templateSearch = new() { PlaceholderText = "Search item or character template", Dock = DockStyle.Fill };
     private readonly ListBox results = new() { Dock = DockStyle.Fill };
@@ -45,7 +62,8 @@ internal sealed class MainForm : Form
     private readonly CheckBox gridOverlay = new() { Text = "Grid", AutoSize = true };
     private readonly CheckBox wallsOverlay = new() { Text = "Show walls / ceilings", Checked = true, AutoSize = true };
     private readonly CheckBox charactersOverlay = new() { Text = "Show NPCs", Checked = true, AutoSize = true };
-    private readonly CheckBox lowerWalls = new() { Text = "Lower walls (F8 view)", AutoSize = true };
+    private readonly CheckBox lowerWalls = new() { Text = "Preview cut wall variants", AutoSize = true };
+    private readonly ToolTip mapViewToolTips = new() { AutoPopDelay = 15000, InitialDelay = 400, ReshowDelay = 100, ShowAlways = true };
     private readonly CheckBox freeDraw = new() { Text = "Free draw preview", AutoSize = true };
     private readonly Stack<TileChange> undoStack = new();
     private readonly Stack<TileChange> redoStack = new();
@@ -70,7 +88,11 @@ internal sealed class MainForm : Form
         KeyPreview = true;
         KeyDown += (_, e) => HandleKeyCommand(e);
         FormClosing += (_, _) => SaveLayout();
-        Shown += (_, _) => ConfigureLayout();
+        Shown += (_, _) =>
+        {
+            ConfigureLayout();
+            if (!File.Exists(mapTutorialStatePath)) ShowMapEditingTutorial();
+        };
         canvas.TileInteraction += (_, interaction) => HandleTileInteraction(interaction);
         zoom.ValueChanged += (_, _) => canvas.TileWidth = zoom.Value;
         collisionOverlay.CheckedChanged += (_, _) => { canvas.ShowCollisionOverlay = collisionOverlay.Checked; canvas.RefreshTile(); };
@@ -78,6 +100,7 @@ internal sealed class MainForm : Form
         wallsOverlay.CheckedChanged += (_, _) => { canvas.ShowWalls = wallsOverlay.Checked; canvas.RefreshTile(); };
         charactersOverlay.CheckedChanged += (_, _) => { canvas.ShowCharacters = charactersOverlay.Checked; canvas.RefreshTile(); };
         lowerWalls.CheckedChanged += (_, _) => { canvas.LowerWalls = lowerWalls.Checked; canvas.RefreshTile(); };
+        mapViewToolTips.SetToolTip(lowerWalls, "Forces configured cut-sprite variants on foreground wall layers. In the game, F8 toggles nocut and disables automatic wall cutting; this preview does not simulate the player's position or neighboring-tile rules.");
         freeDraw.CheckedChanged += (_, _) => { if (BrushPreviewActive()) PreviewFreeDraw(); else { freeDrawTiles.Clear(); canvas.ClearPreview(); } };
         apply.Click += (_, _) => ApplyEdit(); preview.Click += (_, _) => PreviewEdit(); undo.Click += (_, _) => Undo(); redo.Click += (_, _) => Redo();
         paintScope.SelectedIndexChanged += (_, _) => UpdateSelectionSummary();
@@ -85,9 +108,13 @@ internal sealed class MainForm : Form
         paintScope.Items.AddRange(["Whole tile (replace all)", "Ground layer 1", "Ground layer 2", "Wall / ceiling layer 1", "Wall / ceiling layer 2", "Flags only", "Clear whole tile", "Clear ground layer 1", "Clear ground layer 2", "Clear wall / ceiling layer 1", "Clear wall / ceiling layer 2", "Clear flags", "Item only", "NPC only"]);
         paintScope.SelectedIndex = 5;
 
+        LoadRecentMaps();
         var menu = new MenuStrip();
         var file = new ToolStripMenuItem("File");
         file.DropDownItems.Add("Open map...", null, (_, _) => OpenMap());
+        recentMapsMenu = new ToolStripMenuItem("Open recent maps");
+        RefreshRecentMapsMenu();
+        file.DropDownItems.Add(recentMapsMenu);
         file.DropDownItems.Add("Save verbatim workspace copy...", null, (_, _) => SaveWorkspaceCopy());
         file.DropDownItems.Add("Save edited workspace map...", null, (_, _) => SaveEditedMap());
         file.DropDownItems.Add("Export review manifest...", null, (_, _) => ExportManifest());
@@ -98,6 +125,7 @@ internal sealed class MainForm : Form
         edit.DropDownItems.Add("Copy selected region to file...", null, (_, _) => CopyRegionToFile());
         edit.DropDownItems.Add("Paste region from file...", null, (_, _) => PasteRegionFromFile());
         edit.DropDownItems.Add("Clear selected region", null, (_, _) => ClearSelectedRegion());
+        edit.DropDownItems.Add("Create NPC build draft...", null, (_, _) => CreateNpcBuildDraft());
         var undoCommand = new ToolStripMenuItem("Undo", null, (_, _) => Undo()) { ShortcutKeys = Keys.Control | Keys.Z };
         var redoCommand = new ToolStripMenuItem("Redo", null, (_, _) => Redo()) { ShortcutKeys = Keys.Control | Keys.Y };
         edit.DropDownItems.Add(new ToolStripSeparator()); edit.DropDownItems.Add(undoCommand); edit.DropDownItems.Add(redoCommand);
@@ -111,10 +139,13 @@ internal sealed class MainForm : Form
         art.DropDownItems.Add("Open Sprite Browser", null, (_, _) => ShowSpriteBrowser());
         art.DropDownItems.Add("Choose compatible pak art folder...", null, (_, _) => ChooseSpriteArchive());
         menu.Items.Add(art);
+        var help = new ToolStripMenuItem("Help");
+        help.DropDownItems.Add("Map editing tutorial...", null, (_, _) => ShowMapEditingTutorial());
+        menu.Items.Add(help);
 
         var left = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3 };
         left.RowStyles.Add(new RowStyle(SizeType.Percent, 33)); left.RowStyles.Add(new RowStyle(SizeType.Percent, 34)); left.RowStyles.Add(new RowStyle(SizeType.Percent, 33));
-        left.Controls.Add(PanelWith("Find sprite in opened map", spriteSearch, Button("Find map tiles", (_, _) => SearchSprites()), Button("Open sprite browser", (_, _) => ShowSpriteBrowser())), 0, 0);
+        left.Controls.Add(BuildSpriteSearchPanel(), 0, 0);
         left.Controls.Add(PanelWith("Block / area flags", flagSearch, Button("Find flags", (_, _) => SearchFlags())), 0, 1);
         left.Controls.Add(PanelWith("Item and NPC templates", templateSearch, Button("Find templates", (_, _) => SearchTemplates())), 0, 2);
 
@@ -128,7 +159,10 @@ internal sealed class MainForm : Form
         templates.DoubleClick += (_, _) => rightTabs.SelectedIndex = 0;
         spriteWorkspace.SelectedIndexChanged += (_, _) => { if (spriteWorkspace.SelectedItem is uint sprite) SelectPaletteSprite(sprite); ShowSpriteIds(spriteWorkspaceIds); };
         recentSprites.SelectedIndexChanged += (_, _) => { if (recentSprites.SelectedItem is uint sprite) SelectPaletteSprite(sprite); ShowSpriteIds(recentSpriteIds); };
-        spriteBrowserTarget.SelectedIndexChanged += (_, _) => { if (selectedBrowserSprite is not null) UseBrowserSprite(false); };
+        spriteBrowserStart.TextChanged += (_, _) => UpdateDefaultSpriteBrowserEnd();
+        spriteBrowserEnd.TextChanged += (_, _) => { if (!updatingSpriteBrowserRange) spriteBrowserEndWasEdited = true; };
+        foreach (var rangeInput in new[] { spriteBrowserStart, spriteBrowserEnd })
+            rangeInput.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { BrowseSprites(); e.Handled = true; e.SuppressKeyPress = true; } };
         spriteWorkspace.DragEnter += (_, e) => e.Effect = e.Data?.GetDataPresent(DataFormats.Text) == true ? DragDropEffects.Copy : DragDropEffects.None;
         spriteWorkspace.DragDrop += (_, e) => { if (uint.TryParse(e.Data?.GetData(DataFormats.Text)?.ToString(), out var sprite)) AddSpriteToWorkspace(sprite); };
 
@@ -144,6 +178,40 @@ internal sealed class MainForm : Form
         TryLoadDefaultSpriteArchive();
         LoadSpriteWorkspace();
         if (startupArguments?.FirstOrDefault(File.Exists) is { } path) OpenMap(path);
+    }
+
+    private Control BuildSpriteSearchPanel()
+    {
+        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(6) };
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+        panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        panel.Controls.Add(new Label { Text = "Find sprite in opened map", AutoSize = true, Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold), Margin = new Padding(0, 0, 0, 4) }, 0, 0);
+        spriteSearch.Margin = new Padding(0, 2, 0, 4);
+        panel.Controls.Add(spriteSearch, 0, 1);
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = false, WrapContents = true, FlowDirection = FlowDirection.LeftToRight, Margin = Padding.Empty, Padding = Padding.Empty };
+        var find = new Button { Text = "Find map tiles", AutoSize = true };
+        find.Click += (_, _) => SearchSprites();
+        var browseId = new Button { Text = "Browse ID / range", AutoSize = true };
+        browseId.Click += (_, _) => BrowseSpriteSearch();
+        var browseSelection = new Button { Text = "Browse selected tiles", AutoSize = true };
+        browseSelection.Click += (_, _) => BrowseSelectedTiles();
+        var openBrowser = new Button { Text = "Open sprite browser", AutoSize = true };
+        openBrowser.Click += (_, _) => ShowSpriteBrowser();
+        actions.Controls.Add(find);
+        actions.Controls.Add(browseId);
+        actions.Controls.Add(browseSelection);
+        actions.Controls.Add(openBrowser);
+        panel.Controls.Add(actions, 0, 2);
+        spriteSearch.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode != Keys.Enter) return;
+            SearchSprites();
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        };
+        return panel;
     }
 
     private Control BuildEditor()
@@ -167,14 +235,27 @@ internal sealed class MainForm : Form
         var rangeLabel = new Label { Text = "Sprite ID or range", AutoSize = true, Padding = new Padding(0, 6, 6, 0) };
         var browse = new Button { Text = "Browse archive", AutoSize = true };
         browse.Click += (_, _) => BrowseSprites();
-        spriteBrowserSource.Items.AddRange(["Archive ID/range", "Map Ground 1", "Map Ground 2", "Map walls / foreground", "All map sprites", "All current client art"]); spriteBrowserSource.SelectedIndex = 0;
+        var rangeSeparator = new Label { Text = "to", AutoSize = true, Padding = new Padding(2, 6, 2, 0) };
+        var rangeHelp = "Enter a start ID; the end defaults to 500 IDs later. Edit the end ID to choose a custom range. Up to 2,000 sprites are shown per browse.";
+        spriteBrowserToolTip.SetToolTip(spriteBrowserStart, rangeHelp);
+        spriteBrowserToolTip.SetToolTip(spriteBrowserEnd, rangeHelp);
+        spriteBrowserSource.Items.AddRange(["Archive ID/range", "Selection sprites", "Map Ground 1", "Map Ground 2", "Map walls / foreground", "All map sprites", "All current client art"]); spriteBrowserSource.SelectedIndex = 0;
         spriteBrowserTarget.Items.AddRange(["Ground layer 1", "Ground layer 2", "Wall / ceiling layer 1", "Wall / ceiling layer 2"]); spriteBrowserTarget.SelectedIndex = 0;
         var use = new Button { Text = "Use selected sprite", AutoSize = true }; use.Click += (_, _) => UseBrowserSprite(false);
         var applyBrowser = new Button { Text = "Apply preview", AutoSize = true }; applyBrowser.Click += (_, _) => ApplyEdit();
         var controls = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(2) };
-        controls.Controls.Add(rangeLabel); controls.Controls.Add(spriteBrowserRange); controls.Controls.Add(browse); controls.Controls.Add(spriteBrowserSource); controls.Controls.Add(new Label { Text = "Place on:", AutoSize = true, Padding = new Padding(6, 6, 0, 0) }); controls.Controls.Add(spriteBrowserTarget); controls.Controls.Add(freeDraw); controls.Controls.Add(use); controls.Controls.Add(applyBrowser);
-        var groupButtons = new FlowLayoutPanel { AutoSize = true, Controls = { new Label { Text = "Working group: drag thumbnails here", AutoSize = true }, spriteWorkspace, Button("Add selected", (_, _) => { if (selectedBrowserSprite is { } sprite) AddSpriteToWorkspace(sprite); }), Button("Use group sprite", (_, _) => { if (spriteWorkspace.SelectedItem is uint sprite) SelectBrowserSprite(sprite); }) } };
-        var recentBar = new FlowLayoutPanel { AutoSize = true, Controls = { new Label { Text = "Recent 5:", AutoSize = true }, recentSprites } };
+        controls.Controls.Add(rangeLabel); controls.Controls.Add(spriteBrowserStart); controls.Controls.Add(rangeSeparator); controls.Controls.Add(spriteBrowserEnd); controls.Controls.Add(browse); controls.Controls.Add(showMoreSprites); controls.Controls.Add(spriteBrowserResultCount); controls.Controls.Add(spriteBrowserSource); controls.Controls.Add(new Label { Text = "Place on:", AutoSize = true, Padding = new Padding(6, 6, 0, 0) }); controls.Controls.Add(spriteBrowserTarget); controls.Controls.Add(freeDraw); controls.Controls.Add(use); controls.Controls.Add(applyBrowser);
+        showMoreSprites.Click += (_, _) => RenderNextSpritePage();
+        var groupButtons = new FlowLayoutPanel { AutoSize = true, Controls = { new Label { Text = "Working group: drag thumbnails here", AutoSize = true }, spriteWorkspace, Button("Add selected", (_, _) => { if (selectedBrowserSprite is { } sprite) AddSpriteToWorkspace(sprite); }), Button("Use group sprite", (_, _) => { if (spriteWorkspace.SelectedItem is uint sprite) { SelectBrowserSprite(sprite); UseBrowserSprite(false); } }) } };
+        var recentBar = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 2, Margin = Padding.Empty };
+        recentBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); recentBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        recentBar.RowStyles.Add(new RowStyle(SizeType.AutoSize)); recentBar.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        recentBar.Controls.Add(new Label { Text = "Recent 5", AutoSize = true }, 0, 0);
+        recentSprites.Dock = DockStyle.Fill;
+        recentBar.Controls.Add(recentSprites, 0, 1);
+        recentBar.Controls.Add(new Label { Text = "Selected sprite", AutoSize = true }, 1, 0);
+        var selectedSpritePanel = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false, Margin = Padding.Empty, Controls = { recentlySelectedPreview, recentlySelectedId } };
+        recentBar.Controls.Add(selectedSpritePanel, 1, 1);
         panel.Controls.Add(controls, 0, 0); panel.Controls.Add(groupButtons, 0, 1); panel.Controls.Add(recentBar, 0, 2); panel.Controls.Add(spriteGallery, 0, 3);
         return panel;
     }
@@ -198,11 +279,55 @@ internal sealed class MainForm : Form
         try
         {
             map = MapDocument.Load(path); canvas.Map = map; LoadTemplates(Path.GetDirectoryName(path)!); canvas.CharacterSprites = characterSprites; canvas.ItemSprites = itemSprites; TryDetectProfile(path); undoStack.Clear(); redoStack.Clear();
+            AddRecentMap(path);
             var firstSprite = map.Tiles.Values.SelectMany(tile => tile.SpriteComponents).FirstOrDefault(sprite => sprite != 0);
             artDiagnostic = canvas.Sprites is null ? "no package selected" : canvas.Sprites.Get(firstSprite) is null ? canvas.Sprites.LastError ?? "map sprite missing from package" : $"sprite {firstSprite} decoded";
             findings.Clear(); results.Items.Clear(); details.Clear(); UpdateStatus(); SelectTile(0, 0);
         }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "Could not open map", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private void AddRecentMap(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        recentMapPaths.RemoveAll(recent => recent.Equals(fullPath, StringComparison.OrdinalIgnoreCase));
+        recentMapPaths.Insert(0, fullPath);
+        if (recentMapPaths.Count > 3) recentMapPaths.RemoveRange(3, recentMapPaths.Count - 3);
+        RefreshRecentMapsMenu();
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(recentMapsPath)!);
+            File.WriteAllText(recentMapsPath, JsonSerializer.Serialize(recentMapPaths, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch { }
+    }
+
+    private void RefreshRecentMapsMenu()
+    {
+        if (recentMapsMenu is null) return;
+        recentMapsMenu.DropDownItems.Clear();
+        recentMapPaths.RemoveAll(path => !File.Exists(path));
+        foreach (var path in recentMapPaths.Take(3))
+        {
+            var entry = new ToolStripMenuItem(Path.GetFileName(path)) { ToolTipText = path };
+            entry.Click += (_, _) => OpenMap(path);
+            recentMapsMenu.DropDownItems.Add(entry);
+        }
+        if (recentMapsMenu.DropDownItems.Count == 0)
+            recentMapsMenu.DropDownItems.Add(new ToolStripMenuItem("(No recent maps)") { Enabled = false });
+    }
+
+    private void LoadRecentMaps()
+    {
+        try
+        {
+            if (!File.Exists(recentMapsPath)) return;
+            var paths = JsonSerializer.Deserialize<List<string>>(File.ReadAllText(recentMapsPath));
+            if (paths is null) return;
+            foreach (var path in paths.Where(File.Exists).Distinct(StringComparer.OrdinalIgnoreCase).Take(3))
+                recentMapPaths.Add(Path.GetFullPath(path));
+        }
+        catch { }
     }
 
     private void SelectTile(int tileX, int tileY, bool loadPaintInputs = true)
@@ -584,18 +709,44 @@ internal sealed class MainForm : Form
 
     private void SearchSprites()
     {
-        if (!RequireMap()) return; if (!TryParseRange(spriteSearch.Text, out var low, out var high)) { MessageBox.Show(this, "Enter one sprite ID or a range."); return; }
+        if (!RequireMap()) return; if (!TryParseRange(spriteSearch.Text, out var low, out var high)) { spriteSearch.Focus(); MessageBox.Show(this, "Enter a sprite ID or range in the Sprite ID / range box, for example 21006."); return; }
         ShowTiles(map!.Tiles.Values.Where(t => t.SpriteComponents.Any(sprite => sprite >= low && sprite <= high)), "sprite");
+    }
+
+    private void BrowseSpriteSearch()
+    {
+        if (!TryParseRange(spriteSearch.Text, out var low, out var high)) { spriteSearch.Focus(); MessageBox.Show(this, "Enter a sprite ID or range in the Sprite ID / range box, for example 21006."); return; }
+        if ((ulong)high - low + 1 > MaxSpriteBrowserResults) { MessageBox.Show(this, $"Browse at most {MaxSpriteBrowserResults:N0} sprite IDs at a time."); return; }
+        spriteBrowserEndWasEdited = true;
+        spriteBrowserStart.Text = low.ToString();
+        spriteBrowserEnd.Text = high.ToString();
+        spriteBrowserSource.SelectedIndex = 0;
+        ShowSpriteBrowser();
+        BrowseSprites();
+        SelectBrowserSprite(low);
+    }
+
+    private void BrowseSelectedTiles()
+    {
+        if (!RequireMap()) return;
+        spriteBrowserSource.SelectedIndex = 1;
+        ShowSpriteBrowser();
+        BrowseSprites();
     }
 
     private void BrowseSprites()
     {
         if (canvas.Sprites is null) { MessageBox.Show(this, "Choose a legacy pak folder first."); return; }
         IEnumerable<uint> ids;
-        if (spriteBrowserSource.SelectedIndex >= 1 && spriteBrowserSource.SelectedIndex <= 4)
+        if (spriteBrowserSource.SelectedIndex == 1)
+        {
+            if (map is null) { MessageBox.Show(this, "Open a map and select a tile or region first."); return; }
+            ids = GetSelectionSpriteIds();
+        }
+        else if (spriteBrowserSource.SelectedIndex >= 2 && spriteBrowserSource.SelectedIndex <= 5)
         {
             if (map is null) { MessageBox.Show(this, "Open a map before browsing its ground sprites."); return; }
-            ids = spriteBrowserSource.SelectedIndex switch
+            ids = (spriteBrowserSource.SelectedIndex - 1) switch
             {
                 1 => map.Tiles.Values.Select(tile => tile.GroundSprite & 0xffff),
                 2 => map.Tiles.Values.Select(tile => tile.GroundSprite >> 16),
@@ -604,56 +755,107 @@ internal sealed class MainForm : Form
             };
             ids = ids.Where(id => id != 0).Distinct().OrderBy(id => id);
         }
-        else if (spriteBrowserSource.SelectedIndex == 5)
+        else if (spriteBrowserSource.SelectedIndex == 6)
         {
             if (canvas.Sprites is null) { MessageBox.Show(this, "Choose compatible art first."); return; }
             ids = canvas.Sprites.AvailableSpriteIds();
         }
         else
         {
-            if (!TryParseRange(spriteBrowserRange.Text, out var low, out var high)) { MessageBox.Show(this, "Enter one sprite ID or a range."); return; }
-            if (high - low > 500) { MessageBox.Show(this, "Browse at most 501 sprite IDs at a time."); return; }
-            ids = Enumerable.Range((int)low, checked((int)(high - low + 1))).Select(id => (uint)id);
+            if (!TryParseRange($"{spriteBrowserStart.Text}-{spriteBrowserEnd.Text}", out var low, out var high)) { MessageBox.Show(this, "Enter a valid start and end sprite ID."); return; }
+            var count = (ulong)high - low + 1;
+            if (count > MaxSpriteBrowserResults) { MessageBox.Show(this, $"Browse at most {MaxSpriteBrowserResults:N0} sprite IDs at a time."); return; }
+            ids = Enumerable.Range(0, (int)count).Select(offset => low + (uint)offset);
         }
         ShowSpriteIds(ids);
+    }
+
+    private IEnumerable<uint> GetSelectionSpriteIds()
+    {
+        IEnumerable<Point> points = selectedTiles.Count > 1
+            ? selectedTiles
+            : Enumerable.Range((int)y.Value, Math.Min((int)height.Value, 256 - (int)y.Value))
+                .SelectMany(row => Enumerable.Range((int)x.Value, Math.Min((int)width.Value, 256 - (int)x.Value)).Select(column => new Point(column, row)));
+
+        return points
+            .Select(point => map!.Tiles.TryGetValue((point.X, point.Y), out var tile) ? tile : null)
+            .Where(tile => tile is not null)
+            .SelectMany(tile => tile!.SpriteComponents)
+            .Where(id => id != 0)
+            .Select(id => (uint)id)
+            .Distinct()
+            .OrderBy(id => id);
     }
 
     private void ShowSpriteIds(IEnumerable<uint> ids)
     {
         spriteGallery.Controls.Clear();
         if (canvas.Sprites is null) { spriteGallery.Controls.Add(new Label { Text = "Choose compatible art first.", ForeColor = Color.White, AutoSize = true }); return; }
-        foreach (var id in ids.Take(501))
+        spriteBrowserResultIds.Clear();
+        spriteBrowserResultIds.AddRange(ids.Distinct());
+        renderedSpriteCount = 0;
+        RenderNextSpritePage();
+    }
+
+    private void RenderNextSpritePage()
+    {
+        if (canvas.Sprites is null) return;
+        var pageEnd = Math.Min(renderedSpriteCount + SpriteGalleryPageSize, spriteBrowserResultIds.Count);
+        spriteGallery.SuspendLayout();
+        try
         {
-            var image = canvas.Sprites.Get(id);
-            if (image is null) continue;
-            var tile = new Panel { Width = 96, Height = 112, Margin = new Padding(4), BackColor = Color.FromArgb(34, 36, 42), Tag = id };
-            var preview = new PictureBox { Width = 96, Height = 84, SizeMode = PictureBoxSizeMode.CenterImage, Image = image.Bitmap, Cursor = Cursors.Hand, Tag = id, BackColor = Color.FromArgb(18, 20, 24) };
-            var label = new Label { Text = id.ToString(), Dock = DockStyle.Bottom, ForeColor = Color.White, TextAlign = ContentAlignment.MiddleCenter, Height = 24 };
-            var dragOrigin = Point.Empty;
-            preview.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left) dragOrigin = e.Location; };
-            preview.MouseMove += (_, e) =>
+            for (; renderedSpriteCount < pageEnd; renderedSpriteCount++)
             {
-                if (e.Button == MouseButtons.Left && dragOrigin != Point.Empty && (Math.Abs(e.X - dragOrigin.X) >= SystemInformation.DragSize.Width / 2 || Math.Abs(e.Y - dragOrigin.Y) >= SystemInformation.DragSize.Height / 2))
+                var id = spriteBrowserResultIds[renderedSpriteCount];
+                var image = canvas.Sprites.Get(id);
+                if (image is null) continue;
+                var tile = new Panel { Width = 96, Height = 112, Margin = new Padding(4), BackColor = Color.FromArgb(34, 36, 42), Tag = id };
+                var preview = new PictureBox { Width = 96, Height = 84, SizeMode = PictureBoxSizeMode.CenterImage, Image = image.Bitmap, Cursor = Cursors.Hand, Tag = id, BackColor = Color.FromArgb(18, 20, 24) };
+                var label = new Label { Text = id.ToString(), Dock = DockStyle.Bottom, ForeColor = Color.White, TextAlign = ContentAlignment.MiddleCenter, Height = 24 };
+                var dragOrigin = Point.Empty;
+                preview.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left) dragOrigin = e.Location; };
+                preview.MouseMove += (_, e) =>
                 {
-                    dragOrigin = Point.Empty;
-                    preview.DoDragDrop(id.ToString(), DragDropEffects.Copy);
-                }
-            };
-            preview.Click += (_, _) => SelectBrowserSprite((uint)id);
-            preview.DoubleClick += (_, _) => SelectBrowserSprite((uint)id);
-            tile.Controls.Add(preview); tile.Controls.Add(label); spriteGallery.Controls.Add(tile);
+                    if (e.Button == MouseButtons.Left && dragOrigin != Point.Empty && (Math.Abs(e.X - dragOrigin.X) >= SystemInformation.DragSize.Width / 2 || Math.Abs(e.Y - dragOrigin.Y) >= SystemInformation.DragSize.Height / 2))
+                    {
+                        dragOrigin = Point.Empty;
+                        preview.DoDragDrop(id.ToString(), DragDropEffects.Copy);
+                    }
+                };
+                preview.Click += (_, _) => SelectBrowserSprite(id);
+                preview.DoubleClick += (_, _) => SelectBrowserSprite(id);
+                tile.Controls.Add(preview); tile.Controls.Add(label); spriteGallery.Controls.Add(tile);
+            }
         }
-        if (spriteGallery.Controls.Count == 0) spriteGallery.Controls.Add(new Label { Text = "No sprites decoded in that range.", ForeColor = Color.White, AutoSize = true });
+        finally { spriteGallery.ResumeLayout(true); }
+        spriteBrowserResultCount.Text = $"{renderedSpriteCount:N0}/{spriteBrowserResultIds.Count:N0} IDs";
+        showMoreSprites.Enabled = renderedSpriteCount < spriteBrowserResultIds.Count;
+        if (renderedSpriteCount == spriteBrowserResultIds.Count && spriteGallery.Controls.Count == 0)
+            spriteGallery.Controls.Add(new Label { Text = "No sprites decoded in this result set.", ForeColor = Color.White, AutoSize = true });
         if (selectedBrowserSprite is { } selected) HighlightBrowserSprite(selected);
     }
     private void SelectPaletteSprite(uint sprite)
     {
         selectedBrowserSprite = sprite;
+        UpdateRecentlySelectedPreview(sprite);
         HighlightBrowserSprite(sprite);
-        UseBrowserSprite(false);
-        status.Text = $"Sprite {sprite} selected from your palette. Choose a target layer, then Use selected sprite.";
+        status.Text = $"Sprite {sprite} selected for inspection. Choose a target layer, then click Use selected sprite to load it for painting.";
     }
-    private void SelectBrowserSprite(uint sprite) { selectedBrowserSprite = sprite; AddRecentSprite(sprite); HighlightBrowserSprite(sprite); UseBrowserSprite(false); status.Text = $"Sprite {sprite} selected for {spriteBrowserTarget.SelectedItem}. Paint directly on the map, then Apply to commit."; }
+    private void SelectBrowserSprite(uint sprite) { selectedBrowserSprite = sprite; AddRecentSprite(sprite); UpdateRecentlySelectedPreview(sprite); HighlightBrowserSprite(sprite); status.Text = $"Sprite {sprite} selected for inspection. Click Use selected sprite to load it for painting; selecting a thumbnail does not change the map."; }
+    private void UpdateRecentlySelectedPreview(uint sprite)
+    {
+        recentlySelectedPreview.Image = canvas.Sprites?.Get(sprite)?.Bitmap;
+        recentlySelectedId.Text = sprite.ToString();
+    }
+
+    private void UpdateDefaultSpriteBrowserEnd()
+    {
+        if (updatingSpriteBrowserRange || spriteBrowserEndWasEdited || !uint.TryParse(spriteBrowserStart.Text, out var start)) return;
+        var end = Math.Min((ulong)uint.MaxValue, (ulong)start + 500).ToString();
+        updatingSpriteBrowserRange = true;
+        spriteBrowserEnd.Text = end;
+        updatingSpriteBrowserRange = false;
+    }
     private void HighlightBrowserSprite(uint sprite)
     {
         foreach (Control control in spriteGallery.Controls) if (control is Panel panel) panel.BackColor = panel.Tag is uint id && id == sprite ? Color.FromArgb(190, 150, 45) : Color.FromArgb(34, 36, 42);
@@ -661,6 +863,7 @@ internal sealed class MainForm : Form
     private void UseBrowserSprite(bool returnToEditor = true)
     {
         if (selectedBrowserSprite is not { } sprite) return;
+        if (freeDrawTiles.Count > 0 && MessageBox.Show(this, "Using a different sprite will discard the current uncommitted brush preview. Continue?", "Discard brush preview", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
         var target = spriteBrowserTarget.SelectedIndex;
         if (target == 0) { gs1.Value = sprite; paintScope.SelectedIndex = 1; }
         else if (target == 1) { gs2.Value = sprite; paintScope.SelectedIndex = 2; }
@@ -668,7 +871,7 @@ internal sealed class MainForm : Form
         else { fs2.Value = sprite; paintScope.SelectedIndex = 4; }
         freeDrawTiles.Clear(); canvas.ClearPreview();
         if (returnToEditor) rightTabs.SelectedIndex = 0;
-        placeSpriteMode.Checked = true;
+        status.Text = $"Loaded sprite {sprite} into {spriteBrowserTarget.SelectedItem}. Select or preview map tiles, then Apply to commit.";
     }
 
     private void AddSpriteToWorkspace(uint sprite)
@@ -720,6 +923,34 @@ internal sealed class MainForm : Form
         public List<uint>? Recent { get; set; }
     }
     private void ShowSpriteBrowser() => rightTabs.SelectedTab = spriteBrowserPage;
+    private void ShowMapEditingTutorial()
+    {
+        if (mapTutorial is { IsDisposed: false })
+        {
+            mapTutorial.Activate();
+            return;
+        }
+
+        mapTutorial = new MapEditingTutorialForm(
+            () => map is not null,
+            OpenMap,
+            () => spriteSearch.Focus(),
+            ShowSpriteBrowser,
+            BrowseSelectedTiles,
+            () => rightTabs.SelectedIndex = 0);
+        mapTutorial.Dismissed += (_, _) =>
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(mapTutorialStatePath)!);
+                File.WriteAllText(mapTutorialStatePath, "dismissed");
+            }
+            catch { }
+        };
+        mapTutorial.FormClosed += (_, _) => mapTutorial = null;
+        mapTutorial.Show(this);
+    }
+
     private void SearchFlags()
     {
         if (!RequireMap()) return; var wanted = flagSearch.CheckedItems.Cast<string>().ToHashSet(StringComparer.OrdinalIgnoreCase); if (wanted.Count == 0) { MessageBox.Show(this, "Select at least one flag."); return; }
@@ -740,6 +971,14 @@ internal sealed class MainForm : Form
         if (kind.Equals("npc", StringComparison.OrdinalIgnoreCase)) { character.Text = name; paintScope.SelectedIndex = 13; }
         rightTabs.SelectedIndex = 0;
         status.Text = $"Selected {kind} template '{name}'. Choose a tile or region, then Apply tile / rectangle to place it.";
+    }
+
+    private void CreateNpcBuildDraft()
+    {
+        var selectedTemplate = character.Text;
+        if (templates.SelectedItem is string selected && selected.StartsWith("npc  ", StringComparison.OrdinalIgnoreCase)) selectedTemplate = selected[5..].Trim();
+        using var dialog = new NpcBuildDraftForm(characterTemplates, selectedTemplate, canvas.Sprites, characterSprites.Values);
+        dialog.ShowDialog(this);
     }
     private void ShowTiles(IEnumerable<MapTile> tiles, string kind) { results.Items.Clear(); foreach (var tile in tiles.OrderBy(t => t.Y).ThenBy(t => t.X)) results.Items.Add(new Result(kind, tile)); centerTabs.SelectedIndex = 1; status.Text = $"{results.Items.Count:N0} {kind} matches. Click one to select it on the canvas."; }
 
@@ -840,7 +1079,16 @@ internal sealed class MainForm : Form
             if (trimmed.EndsWith(':') && trimmed.Length > 1 && !trimmed.Contains(' ')) destination.Add(trimmed[..^1]);
         }
     }
-    private void ShowDetails(MapTile tile) => details.Text = $"Tile: ({tile.X}, {tile.Y})\r\nGround: {tile.GroundSprite}\r\nForeground: {tile.ForegroundSprite}\r\nItem: {tile.Item ?? "-"}\r\nNPC: {tile.Character ?? "-"}\r\nFlags: {(tile.Flags.Count == 0 ? "-" : string.Join(", ", tile.Flags.OrderBy(f => f)))}\r\nUnsupported: {(tile.UnknownLines.Count == 0 ? "-" : string.Join(" | ", tile.UnknownLines))}";
+    private void ShowDetails(MapTile tile)
+    {
+        var ground1 = tile.GroundSprite & 0xffff;
+        var ground2 = tile.GroundSprite >> 16;
+        var wall1 = tile.ForegroundSprite & 0xffff;
+        var wall2 = tile.ForegroundSprite >> 16;
+        var wall1Cut = canvas.Sprites?.GetCutSprite(wall1) ?? wall1;
+        var wall2Cut = canvas.Sprites?.GetCutSprite(wall2) ?? wall2;
+        details.Text = $"Tile: ({tile.X}, {tile.Y})\r\nGround layer 1: {ground1} (not F8-cut)\r\nGround layer 2: {ground2} (not F8-cut)\r\nWall / ceiling layer 1: {wall1} (cut preview: {wall1Cut})\r\nWall / ceiling layer 2: {wall2} (cut preview: {wall2Cut})\r\nItem: {tile.Item ?? "-"}\r\nNPC: {tile.Character ?? "-"}\r\nFlags: {(tile.Flags.Count == 0 ? "-" : string.Join(", ", tile.Flags.OrderBy(f => f)))}\r\nUnsupported: {(tile.UnknownLines.Count == 0 ? "-" : string.Join(" | ", tile.UnknownLines))}";
+    }
     private bool RequireMap() { if (map is not null) return true; MessageBox.Show(this, "Open a map first."); return false; }
     private bool RequireEditable() { if (!RequireMap()) return false; if (!map!.CanEdit) { MessageBox.Show(this, "This map contains comments or directives this version cannot preserve. It is safely inspection-only; use Save verbatim workspace copy.", "Editing blocked", MessageBoxButtons.OK, MessageBoxIcon.Warning); return false; } return true; }
     private void UpdateStatus() { status.Text = map is null ? "Open a Server 3 .map file." : $"{(map.CanEdit ? "EDITOR READY" : "INSPECTION ONLY")} | source: {MapSourceLabel()} | {map.SourcePath} | {map.Tiles.Count:N0} loaded tiles | art: {artDiagnostic} | profile: {profile?.Revision ?? "none"}"; apply.Enabled = map?.CanEdit == true; undo.Enabled = undoStack.Count != 0; redo.Enabled = redoStack.Count != 0; }
