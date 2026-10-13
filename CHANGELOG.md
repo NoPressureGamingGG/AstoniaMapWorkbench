@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Add canvas-focused Ctrl+C/Ctrl+V region copy and full-overwrite paste, including blank tiles, with one-step undo; route shortcuts through the focused canvas and improve high-contrast ground-grid selection outlines over walls.
+- Add a local sprite clipboard so a selected Sprite Browser sprite can be placed directly on the selected map tiles with Ctrl+C/Ctrl+V; add undoable region cut/move; correctly load signed wall cut offsets without aborting later metadata.
+- Open up to four maps in independent tabs with per-map selection, pending brush preview, validation profile, and undo/redo history; share the in-memory region clipboard across tabs.
+- Fix copy/paste shortcuts being swallowed by the map canvas; use top-level map document tabs with one independent canvas per map; keep region-selection gestures distinct from brush previews and expose focus-independent toolbar commands.
+- Apply wall-cut preview state consistently when switching map documents.
+- Keep map-canvas visible when opening another map, make copy/cut/paste available as map toolbar actions and focused shortcuts, and reserve Ctrl-drag for region selection in brush-preview modes.
+- Add a Brush mode button: left-drag paints the copied tile (all four layers, item, NPC, flags) with one undo step per stroke; Ctrl+Shift+C/V copy and paste tiles, and paste fills multi-tile selections.
+- Add undoable Delete-sprites, Remove-NPC, and Clear-flags actions; refresh the flag checklist after applying edits.
+
 - Add a skippable first-run map-editing tutorial, reopenable from Help.
 - Make sprite ID search input explicit and show per-layer sprite/cut-variant IDs; clarify that client F8 disables automatic cut walls.
 - Add direct map-search-to-browser shortcuts and recognize the 21000-21028 wall family in wall visibility filtering.

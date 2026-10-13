@@ -19,6 +19,8 @@ internal sealed class MapCanvas : Control
     private Point dragStart;
     private Point dragCenter;
     private bool panning;
+    private bool painting;
+    private Point lastPaintTile;
     private bool leftPressed;
     private bool selectionDragging;
     private Point selectionStartTile;
@@ -30,6 +32,11 @@ internal sealed class MapCanvas : Control
     private IReadOnlyDictionary<Point, MapTile> previewTiles = new Dictionary<Point, MapTile>();
 
     public event EventHandler<TileInteraction>? TileInteraction;
+    public event EventHandler<Point>? StrokeTile;
+    public event EventHandler? StrokeEnded;
+
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool PaintMode { get; set; }
 
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public MapDocument? Map
@@ -137,7 +144,15 @@ internal sealed class MapCanvas : Control
         {
             dragStart = e.Location; dragCenter = viewCenter;
             leftPressed = e.Button == MouseButtons.Left;
-            if (leftPressed && (ModifierKeys & Keys.Control) != 0)
+            if (leftPressed && PaintMode && (ModifierKeys & (Keys.Control | Keys.Shift | Keys.Alt)) == 0)
+            {
+                painting = true;
+                lastPaintTile = ScreenToTile(e.Location);
+                StrokeTile?.Invoke(this, lastPaintTile);
+                return;
+            }
+
+            if (leftPressed && (ModifierKeys & (Keys.Control | Keys.Alt)) != 0)
             {
                 selectionDragging = true;
                 selectionStartTile = ScreenToTile(e.Location);
@@ -154,6 +169,19 @@ internal sealed class MapCanvas : Control
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
+        if (painting)
+        {
+            var strokeTile = ScreenToTile(e.Location);
+            if (strokeTile == lastPaintTile) return;
+            // Walk the line so fast drags leave no gaps.
+            var steps = Math.Max(Math.Abs(strokeTile.X - lastPaintTile.X), Math.Abs(strokeTile.Y - lastPaintTile.Y));
+            for (var i = 1; i <= steps; i++)
+                StrokeTile?.Invoke(this, new Point(
+                    lastPaintTile.X + (int)Math.Round((strokeTile.X - lastPaintTile.X) * (double)i / steps),
+                    lastPaintTile.Y + (int)Math.Round((strokeTile.Y - lastPaintTile.Y) * (double)i / steps)));
+            lastPaintTile = strokeTile;
+            return;
+        }
         if (selectionDragging)
         {
             AutoPanAtEdge(e.Location);
@@ -172,6 +200,13 @@ internal sealed class MapCanvas : Control
     protected override void OnMouseUp(MouseEventArgs e)
     {
         if (e.Button is not (MouseButtons.Left or MouseButtons.Middle)) return;
+        if (painting && e.Button == MouseButtons.Left)
+        {
+            painting = false;
+            leftPressed = false;
+            StrokeEnded?.Invoke(this, EventArgs.Empty);
+            return;
+        }
         var wasPanning = panning;
         var wasSelecting = selectionDragging;
         panning = false;
@@ -246,12 +281,14 @@ internal sealed class MapCanvas : Control
         var minY = Math.Clamp(Math.Min(selectionStartTile.Y, selectionEndTile.Y), 0, 255);
         var maxY = Math.Clamp(Math.Max(selectionStartTile.Y, selectionEndTile.Y), 0, 255);
         using var brush = new SolidBrush(Color.FromArgb(48, 80, 170, 255));
-        using var pen = new Pen(Color.FromArgb(190, 120, 210, 255), 1);
+        using var outline = new Pen(Color.FromArgb(230, 120, 210, 255), 1.5f);
+        using var backing = new Pen(Color.FromArgb(220, 8, 12, 18), 3.5f);
         for (var y = minY; y <= maxY; y++) for (var x = minX; x <= maxX; x++)
         {
             var diamond = Diamond(TileToScreen(x, y), tileWidth / 2f, tileWidth / 4f);
             graphics.FillPolygon(brush, diamond);
-            graphics.DrawPolygon(pen, diamond);
+            graphics.DrawPolygon(backing, diamond);
+            graphics.DrawPolygon(outline, diamond);
         }
     }
 
@@ -358,11 +395,17 @@ internal sealed class MapCanvas : Control
                     graphics.FillPolygon(brush, Diamond(anchor, halfWidth, halfHeight));
                 }
             }
-            if (selectedTiles.Contains(new Point(tile.X, tile.Y)))
-            {
-                using var pen = new Pen(Color.Gold, 2);
-                graphics.DrawPolygon(pen, Diamond(anchor, halfWidth, halfHeight));
-            }
+        }
+
+        using var selectionBacking = new Pen(Color.FromArgb(240, 8, 12, 18), 4f);
+        using var selectionOutline = new Pen(Color.Gold, 2f);
+        foreach (var point in selectedTiles)
+        {
+            var anchor = TileToScreen(point.X, point.Y);
+            if (!InViewport(anchor)) continue;
+            var diamond = Diamond(anchor, halfWidth, halfHeight);
+            graphics.DrawPolygon(selectionBacking, diamond);
+            graphics.DrawPolygon(selectionOutline, diamond);
         }
     }
 

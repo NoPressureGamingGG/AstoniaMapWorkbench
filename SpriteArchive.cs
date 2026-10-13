@@ -76,8 +76,9 @@ internal sealed class SpriteArchive
 
     public uint GetCutSprite(uint sprite)
     {
-        var resolved = runtimeBaseSprites.TryGetValue(sprite, out var baseSprite) ? baseSprite : sprite;
-        return cutSprites.TryGetValue(resolved, out var cut) ? cut : resolved;
+        if (cutSprites.TryGetValue(sprite, out var cut)) return cut;
+        if (runtimeBaseSprites.TryGetValue(sprite, out var baseSprite) && cutSprites.TryGetValue(baseSprite, out cut)) return cut;
+        return sprite;
     }
 
     public bool IsWallSprite(uint sprite)
@@ -234,8 +235,20 @@ internal sealed class SpriteArchive
             {
                 if (!entry.TryGetProperty("id", out var id)) continue;
                 var first = id.GetUInt32(); var last = entry.TryGetProperty("id_end", out var end) ? end.GetUInt32() : first;
-                if (entry.TryGetProperty("cut_sprite", out var cut)) for (var sprite = first; sprite <= last; sprite++) cutSprites[sprite] = cut.GetUInt32();
-                else if (entry.TryGetProperty("cut_offset", out var offset)) for (var sprite = first; sprite <= last; sprite++) cutSprites[sprite] = sprite + offset.GetUInt32();
+                if (last < first) continue;
+                if (entry.TryGetProperty("cut_sprite", out var cut))
+                {
+                    for (var sprite = first; sprite <= last; sprite++) cutSprites[sprite] = cut.GetUInt32();
+                }
+                else if (entry.TryGetProperty("cut_offset", out var offset))
+                {
+                    var delta = offset.GetInt32();
+                    for (var sprite = first; sprite <= last; sprite++)
+                    {
+                        var cutSprite = (long)sprite + delta;
+                        if (cutSprite is >= 0 and <= uint.MaxValue) cutSprites[sprite] = (uint)cutSprite;
+                    }
+                }
             }
         }
         catch { }

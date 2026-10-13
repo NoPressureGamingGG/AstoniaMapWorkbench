@@ -1,10 +1,12 @@
-# Tester preview — 2026-10-03
+# Tester preview — 2026-10-13
 
-Owner authorized this preview so testers can find bugs and suggest improvements.
-Source baseline48326aa plus current tutorial, NPC draft form, sprite browser,
-wall-family filtering and depth sorting. Local Release build passed with0warnings
-and0errors. Independent audit is in progress; interactive acceptance is incomplete.
-No server deployment; no private client/server assets or maps bundled.
+This preview is for collecting tester feedback on the map editor. It includes
+multi-map tabs and copy/paste, tile stamping, direct delete/clear actions,
+the tutorial, NPC draft form, sprite browser, wall-family filtering and depth
+sorting. The local Release build and self-contained win-x64 publish passed with
+zero warnings and errors; confirm the GitHub Actions build succeeds before
+downloading. Some interactions still need tester verification. No server
+deployment; no private client/server assets or maps bundled.
 
 ## Obtain and report
 
@@ -17,11 +19,15 @@ Do not attach private assets, credentials or database/runtime data.
 
 ## Focused checks remaining
 
+- Open two maps at once; try region and sprite copy/paste across tabs, including blank source tiles, and verify Undo.
+- Try Ctrl+Shift+C/V tile stamping and Brush left-click/drag; confirm one stroke is undoable.
+- Select tiles and try Delete sprites, Remove NPC and Clear flags. Confirm unrelated tile data remains and Undo restores the edit.
+- Try Ctrl-drag selection and the cut-wall preview on foreground walls; compare with the client where available.
 - Tutorial first-run display, Back/Next, contextual actions, Skip persistence and Help re-entry.
-- Visible ID/range input; browse typed IDs and selected tiles, including8x3; selecting a thumbnail must not paint until explicit Apply.
-- Four-layer details and21006/21007 cut-preview behavior: ground sprites do not use foreground cut rules; Workbench preview is not proof of exact live client behavior.
+- Visible ID/range input; browse typed IDs and selected tiles, including an 8x3 selection; selecting a thumbnail must not paint until explicit Apply.
+- Four-layer details and 21006/21007 cut-preview behavior: ground sprites do not use foreground cut rules; Workbench preview is not proof of exact live client behavior.
 - Depth ordering of foreground, items and characters; NPC draft sprite/help/save workflow.
-- Validate, save to a separate test copy, reopen and compare intended edits; Undo/Redo. Never use a sole copy of valuable map work to test a preview.
+- Validate, save to a separate test copy, reopen and compare intended edits. Never use a sole copy of valuable map work to test a preview.
 
 No claim that every check above passed. Known pending audit findings must be
 recorded before stable promotion. Updater/API installation design is only a

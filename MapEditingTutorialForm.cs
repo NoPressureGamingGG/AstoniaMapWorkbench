@@ -38,7 +38,7 @@ internal sealed class MapEditingTutorialForm : Form
             new Step("1. Open a map", "Open a compatible Server 3 .map file to work on. The Workbench edits a local workspace copy; it does not change a running server.", "Open map...", openMap, RequiresMap: true),
             new Step("2. Find a sprite", "Enter a sprite ID or range in the left-side box. Find map tiles locates existing uses; Browse ID / range opens those sprites directly in the browser.", "Focus sprite ID box", focusSpriteSearch),
             new Step("3. Inspect a selection", "Select a tile or Ctrl-drag a rectangle, then use Browse selected tiles. The browser shows sprites from all four tile layers. Selecting a thumbnail only inspects it; it does not paint.", "Browse selected tiles", browseSelectedTiles),
-            new Step("4. Change a sprite", "Select a thumbnail, choose its target layer, then click Use selected sprite. Preview the edit before Apply tile / rectangle commits it. Use Undo if the result is wrong.", "Open Sprite Browser", openSpriteBrowser),
+            new Step("4. Change a sprite", "Select a thumbnail and target layer, then Copy selected sprite. Select map tile(s) and Paste to place it directly, or Use selected sprite to load it into the editor for preview/apply. Use Undo if the result is wrong.", "Open Sprite Browser", openSpriteBrowser),
             new Step("5. Validate and save", "Choose Validate, then save an edited workspace map to a separate path. Review the saved diff before promoting it. The Workbench never deploys or restarts a server.", "Open Tile editor", openTileEditor)
         ];
 

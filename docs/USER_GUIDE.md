@@ -63,18 +63,25 @@ Choose **Server profile > Save active profile...** to save the currently detecte
 
 ## Map canvas
 
+- Open up to four maps at once; each map gets its own visible document tab and independent canvas, selection, pending brush preview, profile, and undo/redo history. Reopening a map already in a tab activates it. Use **Edit > Close current map tab** to close the selected map.
 - **Left click:** select one tile.
 - **Left click-drag:** pan the map.
 - **Middle-drag:** pan the map.
 - **Mouse wheel or zoom slider:** zoom in or out. The slider can zoom farther out than the original editor.
 - **Arrow keys:** move the current tile selection, even when a Tile editor control has focus.
-- **Ctrl-drag:** draw a rectangular selection window. If the pointer reaches a canvas edge while dragging, the viewport auto-pans so the selection can continue beyond the visible area.
+- **Ctrl-drag:** draw a rectangular selection window in every mode. If the pointer reaches a canvas edge while dragging, the viewport auto-pans so the selection can continue beyond the visible area.
+- **Ctrl+C / Ctrl+V:** copy the selected tile or its rectangular bounds, then paste that region at the selected tile. The visible map toolbar's **Copy region** / **Paste** buttons work regardless of keyboard focus. Copy includes empty tiles; paste replaces all four sprite layers, item, NPC, and flags across the whole rectangle. Use **Undo** to restore the destination. Normal text-field copy/paste is unaffected.
+- **Ctrl+X:** cut the selected region to the local clipboard, or use **Cut / move** on the map toolbar. It clears the source as one undoable edit; select the destination and press **Ctrl+V** to move it. **Ctrl+Z** restores the source if needed.
+- The in-memory region clipboard is shared across map tabs, so copy from one tab and paste into another without exporting a file. **Edit > Copy selected region to file...** remains available for portable region files.
+- Select a Sprite Browser thumbnail and press **Ctrl+C** (or click **Copy selected sprite**) to copy that sprite and its chosen **Place on** layer locally. Focus a map tab, select tile(s), then press **Ctrl+V** or click **Paste** to place it directly, preserving other layers; this is undoable. **Use selected sprite** only loads a sprite into the editor fields for preview/apply workflows.
 - **Shift-click:** select every tile containing the clicked tile's matching sprite on the same ground or foreground layer. It does not match unrelated layers.
 - **Show walls / ceilings:** toggle foreground layers independently, similar to lowering walls for room inspection. This changes only the preview.
-- **Preview cut wall variants:** applies configured cut sprites to foreground wall layers in this static preview. It does not simulate the client's player-position and neighboring-tile rules. In the client, F8 toggles `nocut` and disables automatic wall cutting; it does not enable the cut view.
+- **Preview cut wall variants:** applies configured cut sprites to foreground wall layers in this static preview, including signed cut offsets and animated wall variants. It does not simulate the client's player-position and neighboring-tile rules. In the client, F8 toggles `nocut` and disables automatic wall cutting; it does not enable the cut view.
 - **Show NPCs:** toggle previews of `ch=` characters independently. NPCs are resolved from the `sprite=` value in their `.chr` template; this changes only the preview.
 
 The map canvas draws ground 1 and ground 2 first, then depth-sorts foreground sprites, items, and characters together to match the client's shared map-object layer. Sprite pixels remain a static preview: the live client can additionally animate sprites and apply per-tile lighting, color effects, character state, and runtime offsets.
+
+Selection outlines are drawn from the ground-tile grid coordinates, after the sprites, with a dark backing so they remain visible over walls. Rectangular copy uses the selection's bounding box, including any unselected gaps.
 
 The **Tile details** tab lists Ground 1, Ground 2, Wall / ceiling 1, and Wall / ceiling 2 IDs separately. Ground sprites are not processed by the client's F8 wall-cut routine. Foreground slots also show the cut-preview ID configured for that sprite, when available.
 
@@ -150,9 +157,15 @@ For Item-only and NPC-only edits, the preview also draws the selected template's
 
 The Tile editor shows the current selection count and affected layer. **Preview changes** reports the operation, tile count, number of tiles that will change, and affected layer without modifying the map. Applying a multi-tile edit shows the same summary and asks for confirmation. Whole tile replacement always shows an explicit destructive warning. Undo and redo cover applied tile edits, region paste, region clearing, and tile paste; previewing or cancelling never creates an undo entry.
 
+### Copy a tile and stamp it
+
+Select a tile and choose **Edit > Copy tile** (Ctrl+Shift+C). The copy includes Ground 1/2, Wall/ceiling 1/2, item, NPC, and every flag. **Edit > Paste tile onto selection** (Ctrl+Shift+V) writes it to the selected tile, or to every tile when several are selected.
+
+To build walls and similar runs quickly, press the **Brush** button (paint-brush icon) above the map to turn on Brush mode. Left-drag then paints the copied tile along the path of the mouse, and a single click paints one tile. Ctrl-drag always selects a rectangle; Alt-drag previews a copied-tile rectangle when Brush mode is active. Middle-drag still pans, and Shift-click still selects matching sprites. Each stroke or preview/apply operation is undoable. Press **Brush** again to return to normal selection and panning. If no tile has been copied, the status bar tells you to copy one first.
+
 ### Region copy/paste and large deletion
 
-Use **Ctrl-drag** to select a rectangle, then:
+Use **Ctrl-drag** to select a rectangle in any editor mode, then:
 
 - **Edit > Copy selected region to file...** saves a portable `.mapregion.json` artifact containing all four sprite layers, static flags, and item/NPC template names;
 - open another map, select the destination origin tile, and use **Edit > Paste region from file...**;
@@ -181,7 +194,7 @@ Use the Paint target list and **Apply tile / rectangle** to clear selected conte
 - **Clear wall / ceiling layer 1/2:** removes only that foreground sprite layer;
 - **Clear flags:** removes static flags without changing sprites or template references.
 
-All clearing operations are undoable.
+The Tile editor also has direct **Delete sprites (Del)**, **Remove NPC**, and **Clear flags** actions for the current selection. Delete clears all four sprite components while preserving flags, items, and NPCs; the other actions likewise affect only their named data. These actions and the Paint target clearing operations are undoable. After editing, use **File > Save edited workspace map...** to write the changes to a map file.
 
 ## Sprite browser
 
@@ -205,13 +218,13 @@ Gallery results are loaded 200 thumbnails at a time. Choose **Show next 200** to
 
 The browser keeps a persistent **Working group** and **Recent 5** list in `%LOCALAPPDATA%/AstoniaMapWorkbench/sprite-workspace.json`. Drag a thumbnail into Working group, or use **Add selected**. Select a group/recent sprite to reuse it without searching again.
 
-To paint directly from the browser, explicitly enable **Click-to-place preview** after loading a sprite with **Use selected sprite**. Click map tiles and/or Ctrl-drag rectangles to accumulate a pending brush stroke. The sprite remains previewed in every chosen square until **Apply tile / rectangle** commits it. Normal click placement is preview-only until Apply; Ctrl-drag and Shift-click remain available for selection workflows.
+To paint directly from the browser, explicitly enable **Click-to-place preview** after loading a sprite with **Use selected sprite**. Click map tiles and/or Alt-drag rectangles to accumulate a pending brush stroke. The sprite remains previewed in every chosen square until **Apply tile / rectangle** commits it. Normal click placement is preview-only until Apply; Ctrl-drag and Shift-click remain available for selection workflows.
 
-The Sprite Browser itself contains the full workflow: select a highlighted thumbnail, choose the placement layer, enable **Free draw preview**, paint by Ctrl-drag or click, and use **Apply preview** without switching to Tile editor. The Tile editor remains available as a separate tab.
+The Sprite Browser itself contains the full workflow: select a highlighted thumbnail, choose the placement layer, enable **Free draw preview**, paint by Alt-drag or click, and use **Apply preview** without switching to Tile editor. The Tile editor remains available as a separate tab.
 
 ### Free draw preview
 
-Enable **Free draw preview**, choose a sprite and placement layer, then Ctrl-drag across the map. The selected squares show the proposed sprite immediately, but the map is not changed until **Apply tile / rectangle** is confirmed. Each painted tile receives its own undo entry, so Ctrl+Z can step backward tile by tile. Turning Free draw off restores ordinary Ctrl-drag region selection.
+Enable **Free draw preview**, choose a sprite and placement layer, then Alt-drag across the map. The selected squares show the proposed sprite immediately, but the map is not changed until **Apply tile / rectangle** is confirmed. Each painted tile receives its own undo entry, so Ctrl+Z can step backward tile by tile. Ctrl-drag always selects a region.
 
 Current ZIP PNGs use the same magenta-key transparency, transparent-border cropping, and centered anchor offsets as the Uncharted client. This keeps wall-mounted objects and ground artwork from displaying their source-image rectangles.
 

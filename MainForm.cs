@@ -43,11 +43,12 @@ internal sealed class MainForm : Form
     private readonly TextBox activeFlags = ReadOnlyTextBox();
     private readonly Label selectionSummary = new() { AutoSize = true, Text = "Selection: none" };
     private readonly TabControl centerTabs = new() { Dock = DockStyle.Fill };
+    private TabPage? resultsPage;
     private readonly TabControl rightTabs = new() { Dock = DockStyle.Fill };
     private TabPage? validationPage;
     private TabPage? spriteBrowserPage;
     private readonly Label status = new() { AutoSize = true, Text = "Open a Server 3 .map file." };
-    private readonly MapCanvas canvas = new();
+    private MapCanvas canvas;
     private readonly NumericUpDown x = Number(0, 255), y = Number(0, 255), width = Number(1, 256, 1), height = Number(1, 256, 1);
     private readonly NumericUpDown gs1 = Number(0, ushort.MaxValue), gs2 = Number(0, ushort.MaxValue), fs1 = Number(0, ushort.MaxValue), fs2 = Number(0, ushort.MaxValue);
     private readonly TextBox item = new(), character = new();
@@ -65,24 +66,33 @@ internal sealed class MainForm : Form
     private readonly CheckBox lowerWalls = new() { Text = "Preview cut wall variants", AutoSize = true };
     private readonly ToolTip mapViewToolTips = new() { AutoPopDelay = 15000, InitialDelay = 400, ReshowDelay = 100, ShowAlways = true };
     private readonly CheckBox freeDraw = new() { Text = "Free draw preview", AutoSize = true };
-    private readonly Stack<TileChange> undoStack = new();
-    private readonly Stack<TileChange> redoStack = new();
-    private readonly HashSet<Point> selectedTiles = [];
-    private readonly HashSet<Point> freeDrawTiles = [];
+    private readonly CheckBox stampMode = new() { Text = "Brush", Appearance = Appearance.Button, AutoSize = true, Image = BrushIcon(), TextImageRelation = TextImageRelation.ImageBeforeText };
+    private Dictionary<Point, TileSnapshot> strokeBefore = [];
+    private Stack<TileChange> undoStack = new();
+    private Stack<TileChange> redoStack = new();
+    private HashSet<Point> selectedTiles = [];
+    private HashSet<Point> freeDrawTiles = [];
     private readonly string layoutPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AstoniaMapWorkbench", "layout.json");
     private readonly SplitContainer mainSplit = new() { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, FixedPanel = FixedPanel.Panel1 };
     private readonly SplitContainer centerRightSplit = new() { Dock = DockStyle.Fill, Orientation = Orientation.Vertical };
     private TileSnapshot? copiedTile;
+    private MapRegionClipboard? copiedRegion;
+    private SpriteClipboard? copiedSprite;
     private MapDocument? map;
     private ServerMapProfile? profile;
-    private readonly HashSet<string> itemTemplates = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> characterTemplates = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, uint> characterSprites = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, uint> itemSprites = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> itemTemplates = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> characterTemplates = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, uint> characterSprites = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, uint> itemSprites = new(StringComparer.OrdinalIgnoreCase);
+    private SpriteArchive? spriteArchive;
+    private readonly Dictionary<TabPage, MapWorkspace> workspaces = [];
+    private MapWorkspace? activeWorkspace;
+    private bool switchingWorkspace;
     private string artDiagnostic = "not checked";
 
     public MainForm(string[]? startupArguments = null)
     {
+        canvas = CreateMapCanvas();
         Text = "Astonia Map Workbench - local workspace editor";
         MinimumSize = new Size(1180, 760); Width = 1450; Height = 920;
         KeyPreview = true;
@@ -93,7 +103,8 @@ internal sealed class MainForm : Form
             ConfigureLayout();
             if (!File.Exists(mapTutorialStatePath)) ShowMapEditingTutorial();
         };
-        canvas.TileInteraction += (_, interaction) => HandleTileInteraction(interaction);
+        stampMode.CheckedChanged += (_, _) => canvas.PaintMode = stampMode.Checked;
+        mapViewToolTips.SetToolTip(stampMode, "Brush mode: left-drag paints the copied tile (all four layers, item, NPC, flags). Middle-drag pans; Ctrl-drag selects a rectangle.");
         zoom.ValueChanged += (_, _) => canvas.TileWidth = zoom.Value;
         collisionOverlay.CheckedChanged += (_, _) => { canvas.ShowCollisionOverlay = collisionOverlay.Checked; canvas.RefreshTile(); };
         gridOverlay.CheckedChanged += (_, _) => { canvas.ShowGrid = gridOverlay.Checked; canvas.RefreshTile(); };
@@ -120,12 +131,16 @@ internal sealed class MainForm : Form
         file.DropDownItems.Add("Export review manifest...", null, (_, _) => ExportManifest());
         menu.Items.Add(file);
         var edit = new ToolStripMenuItem("Edit");
-        edit.DropDownItems.Add("Copy tile", null, (_, _) => CopyTile());
-        edit.DropDownItems.Add("Paste tile", null, (_, _) => PasteTile());
+        edit.DropDownItems.Add(new ToolStripMenuItem("Copy tile (4 layers, item, NPC, flags)", null, (_, _) => CopyTile()) { ShortcutKeys = Keys.Control | Keys.Shift | Keys.C });
+        edit.DropDownItems.Add(new ToolStripMenuItem("Paste tile onto selection", null, (_, _) => PasteTile()) { ShortcutKeys = Keys.Control | Keys.Shift | Keys.V });
+        edit.DropDownItems.Add("Copy selected region (Ctrl+C)", null, (_, _) => CopySelectedRegion());
+        edit.DropDownItems.Add("Paste region at selected tile (Ctrl+V)", null, (_, _) => PasteCopiedRegion());
+        edit.DropDownItems.Add("Cut selected region (Ctrl+X)", null, (_, _) => CutSelectedRegion());
         edit.DropDownItems.Add("Copy selected region to file...", null, (_, _) => CopyRegionToFile());
         edit.DropDownItems.Add("Paste region from file...", null, (_, _) => PasteRegionFromFile());
         edit.DropDownItems.Add("Clear selected region", null, (_, _) => ClearSelectedRegion());
         edit.DropDownItems.Add("Create NPC build draft...", null, (_, _) => CreateNpcBuildDraft());
+        edit.DropDownItems.Add("Close current map tab", null, (_, _) => CloseCurrentMapTab());
         var undoCommand = new ToolStripMenuItem("Undo", null, (_, _) => Undo()) { ShortcutKeys = Keys.Control | Keys.Z };
         var redoCommand = new ToolStripMenuItem("Redo", null, (_, _) => Redo()) { ShortcutKeys = Keys.Control | Keys.Y };
         edit.DropDownItems.Add(new ToolStripSeparator()); edit.DropDownItems.Add(undoCommand); edit.DropDownItems.Add(redoCommand);
@@ -149,12 +164,31 @@ internal sealed class MainForm : Form
         left.Controls.Add(PanelWith("Block / area flags", flagSearch, Button("Find flags", (_, _) => SearchFlags())), 0, 1);
         left.Controls.Add(PanelWith("Item and NPC templates", templateSearch, Button("Find templates", (_, _) => SearchTemplates())), 0, 2);
 
-        var mapPage = new TabPage("Map canvas");
-        var scroll = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(18, 20, 24) }; scroll.Controls.Add(canvas);
-        var mapLayout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2 }; mapLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); mapLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        mapLayout.Controls.Add(new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Controls = { new Label { Text = "Isometric zoom" }, zoom, collisionOverlay, gridOverlay, wallsOverlay, lowerWalls, charactersOverlay, new Label { Text = "Left-drag to pan." } } }, 0, 0); mapLayout.Controls.Add(scroll, 0, 1); mapPage.Controls.Add(mapLayout);
-        centerTabs.TabPages.Add(mapPage); centerTabs.TabPages.Add(Tab("Search results", results));
-        results.SelectedIndexChanged += (_, _) => { if (results.SelectedItem is Result r) SelectTile(r.Tile.X, r.Tile.Y); };
+        var mapActions = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true };
+        mapActions.Controls.AddRange([
+            new Label { Text = "Isometric zoom", AutoSize = true, Padding = new Padding(0, 6, 0, 0) },
+            zoom, collisionOverlay, gridOverlay, wallsOverlay, lowerWalls, charactersOverlay, stampMode,
+            new Label { Text = "Ctrl-drag selects; Alt-drag previews a brush. Open up to 4 maps; clipboard is shared.", AutoSize = true, Padding = new Padding(0, 6, 0, 0) },
+            ToolbarButton("Open map", (_, _) => OpenMap()),
+            ToolbarButton("Copy region", (_, _) => { if (IsMapWorkspaceSelected()) CopySelectedRegion(); else status.Text = "Select a map tab first."; }),
+            ToolbarButton("Cut / move", (_, _) => { if (IsMapWorkspaceSelected()) CutSelectedRegion(); else status.Text = "Select a map tab first."; }),
+            ToolbarButton("Paste", (_, _) => { if (IsMapWorkspaceSelected()) PasteCopiedRegion(); else status.Text = "Select a map tab first."; })
+        ]);
+        var centerLayout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2 };
+        centerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        centerLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        centerLayout.Controls.Add(mapActions, 0, 0);
+        centerLayout.Controls.Add(centerTabs, 0, 1);
+        resultsPage = Tab("Search results", results);
+        centerTabs.TabPages.Add(resultsPage);
+        centerTabs.SelectedIndexChanged += (_, _) => ActivateWorkspace(centerTabs.SelectedTab);
+        results.SelectedIndexChanged += (_, _) =>
+        {
+            if (results.SelectedItem is not Result result || activeWorkspace is null) return;
+            var page = workspaces.FirstOrDefault(entry => ReferenceEquals(entry.Value, activeWorkspace)).Key;
+            if (page is not null) centerTabs.SelectedTab = page;
+            SelectTile(result.Tile.X, result.Tile.Y);
+        };
         templates.SelectedIndexChanged += (_, _) => ApplyTemplateSelection();
         templates.DoubleClick += (_, _) => rightTabs.SelectedIndex = 0;
         spriteWorkspace.SelectedIndexChanged += (_, _) => { if (spriteWorkspace.SelectedItem is uint sprite) SelectPaletteSprite(sprite); ShowSpriteIds(spriteWorkspaceIds); };
@@ -171,11 +205,12 @@ internal sealed class MainForm : Form
         rightTabs.Multiline = true; rightTabs.SizeMode = TabSizeMode.Fixed; rightTabs.ItemSize = new Size(110, 24);
         rightTabs.TabPages.Add(Tab("Tile editor", BuildEditor())); rightTabs.TabPages.Add(Tab("Tile details", details)); rightTabs.TabPages.Add(validationPage); rightTabs.TabPages.Add(Tab("Templates", templates)); rightTabs.TabPages.Add(spriteBrowserPage);
         mainSplit.Panel1.Controls.Add(left);
-        centerRightSplit.Panel1.Controls.Add(centerTabs);
+        centerRightSplit.Panel1.Controls.Add(centerLayout);
         centerRightSplit.Panel2.Controls.Add(rightTabs);
         mainSplit.Panel2.Controls.Add(centerRightSplit);
         Controls.Add(mainSplit); Controls.Add(status); Controls.Add(menu); status.Dock = DockStyle.Bottom;
         TryLoadDefaultSpriteArchive();
+        canvas.Sprites = spriteArchive;
         LoadSpriteWorkspace();
         if (startupArguments?.FirstOrDefault(File.Exists) is { } path) OpenMap(path);
     }
@@ -214,6 +249,25 @@ internal sealed class MainForm : Form
         return panel;
     }
 
+    private MapCanvas CreateMapCanvas()
+    {
+        var mapCanvas = new MapCanvas
+        {
+            TileWidth = zoom.Value,
+            ShowCollisionOverlay = collisionOverlay.Checked,
+            ShowGrid = gridOverlay.Checked,
+            ShowWalls = wallsOverlay.Checked,
+            LowerWalls = lowerWalls.Checked,
+            ShowCharacters = charactersOverlay.Checked,
+            PaintMode = stampMode.Checked,
+            Sprites = spriteArchive
+        };
+        mapCanvas.TileInteraction += (_, interaction) => HandleTileInteraction(interaction);
+        mapCanvas.StrokeTile += (_, point) => PaintStrokeTile(point);
+        mapCanvas.StrokeEnded += (_, _) => EndPaintStroke();
+        return mapCanvas;
+    }
+
     private Control BuildEditor()
     {
         var panel = new TableLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, ColumnCount = 2, Padding = new Padding(8) };
@@ -224,7 +278,7 @@ internal sealed class MainForm : Form
         item.Dock = DockStyle.Fill; character.Dock = DockStyle.Fill; AddRow(panel, "Item template", item); AddRow(panel, "NPC template", character);
         editFlags.Dock = DockStyle.Top; AddRow(panel, "Static flags", editFlags);
         activeFlags.Height = 44; AddRow(panel, "Active flags", activeFlags);
-        var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Top, Controls = { preview, apply, undo, redo } }; AddRow(panel, "", buttons);
+        var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Top, Controls = { preview, apply, ToolbarButton("Delete sprites (Del)", (_, _) => DeleteSelectedSprites()), ToolbarButton("Remove NPC", (_, _) => RemoveSelectedNpcs()), ToolbarButton("Clear flags", (_, _) => ClearSelectedFlags()), undo, redo } }; AddRow(panel, "", buttons);
         return panel;
     }
 
@@ -242,9 +296,10 @@ internal sealed class MainForm : Form
         spriteBrowserSource.Items.AddRange(["Archive ID/range", "Selection sprites", "Map Ground 1", "Map Ground 2", "Map walls / foreground", "All map sprites", "All current client art"]); spriteBrowserSource.SelectedIndex = 0;
         spriteBrowserTarget.Items.AddRange(["Ground layer 1", "Ground layer 2", "Wall / ceiling layer 1", "Wall / ceiling layer 2"]); spriteBrowserTarget.SelectedIndex = 0;
         var use = new Button { Text = "Use selected sprite", AutoSize = true }; use.Click += (_, _) => UseBrowserSprite(false);
+        var copySprite = new Button { Text = "Copy selected sprite", AutoSize = true }; copySprite.Click += (_, _) => CopySelectedSprite();
         var applyBrowser = new Button { Text = "Apply preview", AutoSize = true }; applyBrowser.Click += (_, _) => ApplyEdit();
         var controls = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(2) };
-        controls.Controls.Add(rangeLabel); controls.Controls.Add(spriteBrowserStart); controls.Controls.Add(rangeSeparator); controls.Controls.Add(spriteBrowserEnd); controls.Controls.Add(browse); controls.Controls.Add(showMoreSprites); controls.Controls.Add(spriteBrowserResultCount); controls.Controls.Add(spriteBrowserSource); controls.Controls.Add(new Label { Text = "Place on:", AutoSize = true, Padding = new Padding(6, 6, 0, 0) }); controls.Controls.Add(spriteBrowserTarget); controls.Controls.Add(freeDraw); controls.Controls.Add(use); controls.Controls.Add(applyBrowser);
+        controls.Controls.Add(rangeLabel); controls.Controls.Add(spriteBrowserStart); controls.Controls.Add(rangeSeparator); controls.Controls.Add(spriteBrowserEnd); controls.Controls.Add(browse); controls.Controls.Add(showMoreSprites); controls.Controls.Add(spriteBrowserResultCount); controls.Controls.Add(spriteBrowserSource); controls.Controls.Add(new Label { Text = "Place on:", AutoSize = true, Padding = new Padding(6, 6, 0, 0) }); controls.Controls.Add(spriteBrowserTarget); controls.Controls.Add(freeDraw); controls.Controls.Add(use); controls.Controls.Add(copySprite); controls.Controls.Add(applyBrowser);
         showMoreSprites.Click += (_, _) => RenderNextSpritePage();
         var groupButtons = new FlowLayoutPanel { AutoSize = true, Controls = { new Label { Text = "Working group: drag thumbnails here", AutoSize = true }, spriteWorkspace, Button("Add selected", (_, _) => { if (selectedBrowserSprite is { } sprite) AddSpriteToWorkspace(sprite); }), Button("Use group sprite", (_, _) => { if (spriteWorkspace.SelectedItem is uint sprite) { SelectBrowserSprite(sprite); UseBrowserSprite(false); } }) } };
         var recentBar = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 2, Margin = Padding.Empty };
@@ -278,13 +333,131 @@ internal sealed class MainForm : Form
     {
         try
         {
-            map = MapDocument.Load(path); canvas.Map = map; LoadTemplates(Path.GetDirectoryName(path)!); canvas.CharacterSprites = characterSprites; canvas.ItemSprites = itemSprites; TryDetectProfile(path); undoStack.Clear(); redoStack.Clear();
+            var fullPath = Path.GetFullPath(path);
+            var existing = workspaces.FirstOrDefault(entry => entry.Value.Map.SourcePath.Equals(fullPath, StringComparison.OrdinalIgnoreCase));
+            if (existing.Key is not null)
+            {
+                centerTabs.SelectedTab = existing.Key;
+                return;
+            }
+            if (workspaces.Count >= 4)
+            {
+                MessageBox.Show(this, "Up to four maps can be open at once. Close a map tab before opening another.", "Map tab limit", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var loadedMap = MapDocument.Load(fullPath);
+            SaveActiveWorkspace();
+            var workspaceCanvas = CreateMapCanvas();
+            workspaceCanvas.Sprites = spriteArchive;
+            workspaceCanvas.Map = loadedMap;
+            var workspace = new MapWorkspace(loadedMap, null, [], [], new Stack<TileChange>(), new Stack<TileChange>(), workspaceCanvas);
+            var page = new TabPage(Path.GetFileName(fullPath)) { ToolTipText = fullPath };
+            workspaces.Add(page, workspace);
+            page.Controls.Add(workspaceCanvas);
+            centerTabs.TabPages.Insert(Math.Max(0, centerTabs.TabPages.IndexOf(resultsPage!)), page);
+            centerTabs.SelectedTab = page;
+            ActivateWorkspace(page);
             AddRecentMap(path);
-            var firstSprite = map.Tiles.Values.SelectMany(tile => tile.SpriteComponents).FirstOrDefault(sprite => sprite != 0);
+            var firstSprite = loadedMap.Tiles.Values.SelectMany(tile => tile.SpriteComponents).FirstOrDefault(sprite => sprite != 0);
             artDiagnostic = canvas.Sprites is null ? "no package selected" : canvas.Sprites.Get(firstSprite) is null ? canvas.Sprites.LastError ?? "map sprite missing from package" : $"sprite {firstSprite} decoded";
             findings.Clear(); results.Items.Clear(); details.Clear(); UpdateStatus(); SelectTile(0, 0);
         }
-        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Could not open map", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Could not open map", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void SaveActiveWorkspace()
+    {
+        if (activeWorkspace is null || map is null) return;
+        activeWorkspace.Map = map;
+        activeWorkspace.Profile = profile;
+        activeWorkspace.SelectedTiles = selectedTiles;
+        activeWorkspace.FreeDrawTiles = freeDrawTiles;
+        activeWorkspace.UndoStack = undoStack;
+        activeWorkspace.RedoStack = redoStack;
+        activeWorkspace.X = (int)x.Value;
+        activeWorkspace.Y = (int)y.Value;
+        activeWorkspace.Width = (int)width.Value;
+        activeWorkspace.Height = (int)height.Value;
+    }
+
+    private void ActivateWorkspace(TabPage? page)
+    {
+        if (switchingWorkspace || page is null || !workspaces.TryGetValue(page, out var workspace) || ReferenceEquals(activeWorkspace, workspace)) return;
+        SaveActiveWorkspace();
+        activeWorkspace = workspace;
+        map = workspace.Map;
+        profile = workspace.Profile;
+        canvas = workspace.Canvas;
+        selectedTiles = workspace.SelectedTiles;
+        freeDrawTiles = workspace.FreeDrawTiles;
+        undoStack = workspace.UndoStack;
+        redoStack = workspace.RedoStack;
+        strokeBefore = [];
+        LoadTemplates(Path.GetDirectoryName(map.SourcePath)!);
+        canvas.CharacterSprites = characterSprites;
+        canvas.ItemSprites = itemSprites;
+        canvas.Sprites = spriteArchive;
+        canvas.TileWidth = zoom.Value;
+        canvas.ShowCollisionOverlay = collisionOverlay.Checked;
+        canvas.ShowGrid = gridOverlay.Checked;
+        canvas.ShowWalls = wallsOverlay.Checked;
+        canvas.LowerWalls = lowerWalls.Checked;
+        canvas.ShowCharacters = charactersOverlay.Checked;
+        canvas.PaintMode = stampMode.Checked;
+        canvas.SetSelection(selectedTiles);
+        var selected = selectedTiles.OrderBy(point => point.Y).ThenBy(point => point.X).FirstOrDefault(new Point(workspace.X, workspace.Y));
+        canvas.SelectedTile = selected;
+        x.Value = workspace.X; y.Value = workspace.Y;
+        width.Value = workspace.Width; height.Value = workspace.Height;
+        if (profile is null) TryDetectProfile(map.SourcePath);
+        PopulateProfileLists();
+        if (map.Tiles.TryGetValue((selected.X, selected.Y), out var tile))
+        {
+            LoadTile(tile);
+            ShowDetails(tile);
+        }
+        if (BrushPreviewActive() && freeDrawTiles.Count > 0) PreviewFreeDraw();
+        else canvas.ClearPreview();
+        var firstSprite = map.Tiles.Values.SelectMany(tile => tile.SpriteComponents).FirstOrDefault(sprite => sprite != 0);
+        artDiagnostic = canvas.Sprites is null ? "no package selected" : canvas.Sprites.Get(firstSprite) is null ? canvas.Sprites.LastError ?? "map sprite missing from package" : $"sprite {firstSprite} decoded";
+        UpdateStatus();
+    }
+
+    private void CloseCurrentMapTab()
+    {
+        if (centerTabs.SelectedTab is not { } page || !workspaces.ContainsKey(page)) return;
+        var closingActive = ReferenceEquals(workspaces[page], activeWorkspace);
+        if (closingActive) SaveActiveWorkspace();
+        var removedWorkspace = workspaces[page];
+        switchingWorkspace = true;
+        workspaces.Remove(page);
+        centerTabs.TabPages.Remove(page);
+        page.Controls.Remove(removedWorkspace.Canvas);
+        page.Dispose();
+        removedWorkspace.Canvas.Dispose();
+        switchingWorkspace = false;
+        if (closingActive)
+        {
+            activeWorkspace = null;
+            map = null;
+            profile = null;
+            selectedTiles = [];
+            freeDrawTiles = [];
+            undoStack = new Stack<TileChange>();
+            redoStack = new Stack<TileChange>();
+            strokeBefore = [];
+            if (centerTabs.SelectedTab is { } next && workspaces.ContainsKey(next)) ActivateWorkspace(next);
+            else
+            {
+                canvas = CreateMapCanvas();
+                canvas.Sprites = spriteArchive;
+                findings.Clear(); details.Clear(); UpdateStatus();
+            }
+        }
     }
 
     private void AddRecentMap(string path)
@@ -343,6 +516,11 @@ internal sealed class MainForm : Form
     private void HandleTileInteraction(TileInteraction interaction)
     {
         if (map is null) return;
+        if ((interaction.Modifiers & Keys.Alt) != 0 && BrushPreviewActive() && interaction.SelectionStart is { } previewStart)
+        {
+            AddFreeDrawTiles(RectanglePoints(previewStart, interaction.Tile));
+            return;
+        }
         if (placeSpriteMode.Checked && selectedBrowserSprite is not null && (interaction.Modifiers & (Keys.Control | Keys.Shift)) == 0)
         {
             AddFreeDrawTiles([interaction.Tile]);
@@ -359,13 +537,18 @@ internal sealed class MainForm : Form
         SelectTile(interaction.Tile.X, interaction.Tile.Y);
     }
 
-    private void SelectSection(Point anchor, Point tile)
+    private static Point[] RectanglePoints(Point anchor, Point tile)
     {
         anchor = ClampMapPoint(anchor); tile = ClampMapPoint(tile);
         var minX = Math.Min(anchor.X, tile.X); var maxX = Math.Max(anchor.X, tile.X);
         var minY = Math.Min(anchor.Y, tile.Y); var maxY = Math.Max(anchor.Y, tile.Y);
-        var section = Enumerable.Range(minY, maxY - minY + 1).SelectMany(row => Enumerable.Range(minX, maxX - minX + 1).Select(column => new Point(column, row))).ToArray();
-        if (BrushPreviewActive()) AddFreeDrawTiles(section); else SelectTiles(section, "section");
+        return Enumerable.Range(minY, maxY - minY + 1).SelectMany(row => Enumerable.Range(minX, maxX - minX + 1).Select(column => new Point(column, row))).ToArray();
+    }
+
+    private void SelectSection(Point anchor, Point tile)
+    {
+        var section = RectanglePoints(anchor, tile);
+        SelectTiles(section, "section");
     }
 
     private static Point ClampMapPoint(Point point) => new(Math.Clamp(point.X, 0, 255), Math.Clamp(point.Y, 0, 255));
@@ -424,6 +607,12 @@ internal sealed class MainForm : Form
 
     private void HandleKeyCommand(KeyEventArgs e)
     {
+        if (e.KeyCode == Keys.Delete && IsMapWorkspaceSelected() && !IsTextInputFocused())
+        {
+            DeleteSelectedSprites();
+            e.SuppressKeyPress = true;
+            return;
+        }
         if (e.Control && e.KeyCode == Keys.Z)
         {
             if (e.Shift) Redo(); else Undo();
@@ -441,6 +630,41 @@ internal sealed class MainForm : Form
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
+        if (keyData == Keys.Delete && IsMapWorkspaceSelected() && !IsTextInputFocused())
+        {
+            DeleteSelectedSprites();
+            return true;
+        }
+        if (keyData == (Keys.Control | Keys.Shift | Keys.C) && IsMapWorkspaceSelected() && !IsTextInputFocused())
+        {
+            CopyTile();
+            return true;
+        }
+        if (keyData == (Keys.Control | Keys.Shift | Keys.V) && IsMapWorkspaceSelected() && !IsTextInputFocused())
+        {
+            PasteTile();
+            return true;
+        }
+        if (keyData == (Keys.Control | Keys.C) && rightTabs.SelectedTab == spriteBrowserPage && !IsTextInputFocused())
+        {
+            CopySelectedSprite();
+            return true;
+        }
+        if (keyData == (Keys.Control | Keys.C) && IsMapWorkspaceSelected() && !IsTextInputFocused())
+        {
+            CopySelectedRegion();
+            return true;
+        }
+        if (keyData == (Keys.Control | Keys.V) && IsMapWorkspaceSelected() && !IsTextInputFocused())
+        {
+            PasteCopiedRegion();
+            return true;
+        }
+        if (keyData == (Keys.Control | Keys.X) && IsMapWorkspaceSelected() && !IsTextInputFocused())
+        {
+            CutSelectedRegion();
+            return true;
+        }
         if (keyData is Keys.Left or Keys.Right or Keys.Up or Keys.Down)
         {
             NavigateSelection(new KeyEventArgs(keyData));
@@ -451,46 +675,184 @@ internal sealed class MainForm : Form
         return base.ProcessCmdKey(ref msg, keyData);
     }
 
+    private bool IsTextInputFocused()
+    {
+        return FindFocusedControl(this) is TextBoxBase or ComboBox or NumericUpDown;
+    }
+
+    private bool IsMapWorkspaceSelected() =>
+        centerTabs.SelectedTab is { } page && workspaces.ContainsKey(page);
+
+    private static Control? FindFocusedControl(Control parent)
+    {
+        foreach (Control child in parent.Controls)
+        {
+            if (!child.ContainsFocus) continue;
+            return FindFocusedControl(child) ?? child;
+        }
+        return parent.Focused ? parent : null;
+    }
+
     private void CopyTile()
     {
         if (!RequireMap()) return;
         copiedTile = TileSnapshot.Capture(map!.GetTile((int)x.Value, (int)y.Value));
-        status.Text = $"Copied tile ({x.Value},{y.Value}). Select another tile and use Edit > Paste tile.";
+        copiedRegion = null;
+        copiedSprite = null;
+        status.Text = $"Copied tile ({x.Value},{y.Value}) with all four layers, item, NPC, and flags. Paste it (Ctrl+Shift+V) or use Brush mode to paint it.";
     }
 
     private void PasteTile()
     {
-        if (!RequireEditable() || copiedTile is null) return;
-        var target = map!.GetTile((int)x.Value, (int)y.Value);
-        var before = TileSnapshot.Capture(target);
-        copiedTile.Restore(target);
-        var after = TileSnapshot.Capture(target);
-        undoStack.Push(new TileChange([before], [after]));
+        if (!RequireEditable()) return;
+        if (copiedTile is null) { status.Text = "Copy a tile first (Edit > Copy tile, Ctrl+Shift+C)."; return; }
+        StampCopiedTile(selectedTiles.Count > 1 ? selectedTiles.ToArray() : [new Point((int)x.Value, (int)y.Value)]);
+    }
+
+    private void StampCopiedTile(IReadOnlyCollection<Point> targets)
+    {
+        if (!RequireEditable() || copiedTile is null || targets.Count == 0) return;
+        var before = targets.Select(point => TileSnapshot.Capture(map!.GetTile(point.X, point.Y))).ToList();
+        foreach (var point in targets) copiedTile.Restore(map!.GetTile(point.X, point.Y));
+        var after = targets.Select(point => TileSnapshot.Capture(map!.GetTile(point.X, point.Y))).ToList();
+        undoStack.Push(new TileChange(before, after));
         redoStack.Clear();
-        LoadTile(target);
+        canvas.SetSelection(targets);
+        var first = targets.First();
+        LoadTile(map!.GetTile(first.X, first.Y), false);
+        ShowDetails(map.GetTile(first.X, first.Y));
         canvas.RefreshTile();
         UpdateStatus();
+        status.Text = $"Stamped copied tile onto {targets.Count:N0} tile(s). Ctrl+Z undoes the whole stamp.";
+    }
+
+    private void PaintStrokeTile(Point point)
+    {
+        if (map is null || point.X is < 0 or > 255 || point.Y is < 0 or > 255) return;
+        if (copiedTile is null) { status.Text = "Copy a tile first (Edit > Copy tile, Ctrl+Shift+C), then paint."; return; }
+        if (!map.CanEdit) { status.Text = "This map is inspection-only and cannot be painted."; return; }
+        if (strokeBefore.ContainsKey(point)) return;
+        var tile = map.GetTile(point.X, point.Y);
+        strokeBefore[point] = TileSnapshot.Capture(tile);
+        copiedTile.Restore(tile);
+        canvas.RefreshTile();
+    }
+
+    private void EndPaintStroke()
+    {
+        if (map is null || strokeBefore.Count == 0) return;
+        var before = strokeBefore.Values.ToList();
+        var after = before.Select(snapshot => TileSnapshot.Capture(map.GetTile(snapshot.X, snapshot.Y))).ToList();
+        strokeBefore.Clear();
+        undoStack.Push(new TileChange(before, after));
+        redoStack.Clear();
+        UpdateStatus();
+        status.Text = $"Painted {before.Count:N0} tile(s). Ctrl+Z undoes the whole stroke.";
+    }
+
+    private static Bitmap BrushIcon()
+    {
+        var icon = new Bitmap(20, 20);
+        using var g = Graphics.FromImage(icon);
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        using var handle = new Pen(Color.SaddleBrown, 3) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
+        g.DrawLine(handle, 17, 2, 9, 10);
+        using var ferrule = new Pen(Color.Silver, 4);
+        g.DrawLine(ferrule, 9, 10, 7, 12);
+        using var bristles = new SolidBrush(Color.RoyalBlue);
+        g.FillEllipse(bristles, 2, 12, 7, 7);
+        return icon;
     }
 
     private void CopyRegionToFile()
     {
         if (!RequireMap() || selectedTiles.Count == 0) return;
+        var region = CaptureSelectedRegion();
+        if (region is null) return;
+        using var dialog = new SaveFileDialog { Filter = "Map region (*.mapregion.json)|*.mapregion.json", FileName = "region.mapregion.json", Title = "Copy selected region" };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        File.WriteAllText(dialog.FileName, JsonSerializer.Serialize(region, new JsonSerializerOptions { WriteIndented = true }));
+        status.Text = $"Copied {region.Width}x{region.Height} region to {Path.GetFileName(dialog.FileName)}.";
+    }
+
+    private void CopySelectedRegion()
+    {
+        if (!RequireMap() || selectedTiles.Count == 0) return;
+        copiedRegion = CaptureSelectedRegion();
+        copiedTile = null;
+        copiedSprite = null;
+        if (copiedRegion is not null)
+            status.Text = $"Copied {copiedRegion.Width}x{copiedRegion.Height} region, including empty tiles. Ctrl+V replaces the destination region; Ctrl+Z undoes it.";
+    }
+
+    private void CopySelectedSprite()
+    {
+        if (selectedBrowserSprite is not { } sprite)
+        {
+            status.Text = "Select a sprite thumbnail first.";
+            return;
+        }
+        copiedSprite = new SpriteClipboard(sprite, Math.Clamp(spriteBrowserTarget.SelectedIndex, 0, 3));
+        copiedTile = null;
+        copiedRegion = null;
+        status.Text = $"Copied sprite {sprite} to the local clipboard for {spriteBrowserTarget.SelectedItem}. Select a map tile and press Ctrl+V to place it.";
+    }
+
+    private MapRegionClipboard? CaptureSelectedRegion()
+    {
+        if (map is null || selectedTiles.Count == 0) return null;
         var minX = selectedTiles.Min(tile => tile.X); var minY = selectedTiles.Min(tile => tile.Y);
         var maxX = selectedTiles.Max(tile => tile.X); var maxY = selectedTiles.Max(tile => tile.Y);
-        var region = new MapRegionClipboard
+        return new MapRegionClipboard
         {
             Width = maxX - minX + 1,
             Height = maxY - minY + 1,
             Tiles = Enumerable.Range(minY, maxY - minY + 1).SelectMany(row => Enumerable.Range(minX, maxX - minX + 1).Select(column =>
             {
-                var tile = map!.GetTile(column, row);
+                var tile = map.GetTile(column, row);
                 return new MapRegionTile { X = column - minX, Y = row - minY, GroundSprite = tile.GroundSprite, ForegroundSprite = tile.ForegroundSprite, Item = tile.Item, Character = tile.Character, Flags = tile.Flags.ToList() };
             })).ToList()
         };
-        using var dialog = new SaveFileDialog { Filter = "Map region (*.mapregion.json)|*.mapregion.json", FileName = "region.mapregion.json", Title = "Copy selected region" };
-        if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        File.WriteAllText(dialog.FileName, JsonSerializer.Serialize(region, new JsonSerializerOptions { WriteIndented = true }));
-        status.Text = $"Copied {region.Width}x{region.Height} region to {Path.GetFileName(dialog.FileName)}.";
+    }
+
+    private void PasteCopiedRegion()
+    {
+        if (!RequireEditable()) return;
+        if (copiedSprite is { } sprite)
+        {
+            PasteSprite(sprite);
+            return;
+        }
+        if (copiedRegion is null) { status.Text = "Copy a selected region first (Ctrl+C)."; return; }
+        try { PasteRegion(copiedRegion); }
+        catch (InvalidDataException ex) { MessageBox.Show(this, ex.Message, "Could not paste region", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+    }
+
+    private void PasteSprite(SpriteClipboard clipboard)
+    {
+        var targets = GetEditTargets();
+        var before = targets.Select(point => TileSnapshot.Capture(map!.GetTile(point.X, point.Y))).ToList();
+        foreach (var point in targets)
+        {
+            var tile = map!.GetTile(point.X, point.Y);
+            switch (clipboard.Layer)
+            {
+                case 0: tile.GroundSprite = (tile.GroundSprite & 0xffff0000) | (clipboard.Sprite & 0xffff); break;
+                case 1: tile.GroundSprite = (tile.GroundSprite & 0x0000ffff) | (clipboard.Sprite & 0xffff) << 16; break;
+                case 2: tile.ForegroundSprite = (tile.ForegroundSprite & 0xffff0000) | (clipboard.Sprite & 0xffff); break;
+                case 3: tile.ForegroundSprite = (tile.ForegroundSprite & 0x0000ffff) | (clipboard.Sprite & 0xffff) << 16; break;
+            }
+        }
+        var after = targets.Select(point => TileSnapshot.Capture(map!.GetTile(point.X, point.Y))).ToList();
+        undoStack.Push(new TileChange(before, after));
+        redoStack.Clear();
+        freeDrawTiles.Clear();
+        canvas.ClearPreview();
+        canvas.RefreshTile();
+        LoadTile(map!.GetTile((int)x.Value, (int)y.Value), false);
+        ShowDetails(map.GetTile((int)x.Value, (int)y.Value));
+        UpdateStatus();
+        status.Text = $"Pasted sprite {clipboard.Sprite} onto {targets.Length:N0} tile(s) in {spriteBrowserTarget.Items[clipboard.Layer]}. Ctrl+Z undoes the paste.";
     }
 
     private void PasteRegionFromFile()
@@ -501,19 +863,78 @@ internal sealed class MainForm : Form
         try
         {
             var region = JsonSerializer.Deserialize<MapRegionClipboard>(File.ReadAllText(dialog.FileName)) ?? throw new InvalidDataException("The region file is empty.");
-            var originX = (int)x.Value; var originY = (int)y.Value;
-            if (originX + region.Width > 256 || originY + region.Height > 256) throw new InvalidDataException("The region does not fit at the selected origin.");
-            var before = region.Tiles.Select(tile => TileSnapshot.Capture(map!.GetTile(originX + tile.X, originY + tile.Y))).ToList();
-            foreach (var tile in region.Tiles)
-            {
-                var target = map!.GetTile(originX + tile.X, originY + tile.Y);
-                target.GroundSprite = tile.GroundSprite; target.ForegroundSprite = tile.ForegroundSprite; target.Item = tile.Item; target.Character = tile.Character;
-                target.Flags.Clear(); foreach (var flag in tile.Flags ?? []) target.Flags.Add(flag);
-            }
-            var after = region.Tiles.Select(tile => TileSnapshot.Capture(map!.GetTile(originX + tile.X, originY + tile.Y))).ToList();
-            undoStack.Push(new TileChange(before, after)); redoStack.Clear(); SelectTiles(region.Tiles.Select(tile => new Point(originX + tile.X, originY + tile.Y)), "pasted region"); UpdateStatus();
+            PasteRegion(region);
         }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "Could not paste region", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+    }
+
+    private void PasteRegion(MapRegionClipboard region)
+    {
+        ValidateRegion(region);
+        var originX = selectedTiles.Count == 0 ? (int)x.Value : selectedTiles.Min(tile => tile.X);
+        var originY = selectedTiles.Count == 0 ? (int)y.Value : selectedTiles.Min(tile => tile.Y);
+        if (originX + region.Width > 256 || originY + region.Height > 256)
+            throw new InvalidDataException("The region does not fit at the selected origin.");
+
+        var before = Enumerable.Range(0, region.Height)
+            .SelectMany(row => Enumerable.Range(0, region.Width)
+                .Select(column => TileSnapshot.Capture(map!.GetTile(originX + column, originY + row))))
+            .ToList();
+        foreach (var tile in region.Tiles)
+        {
+            var target = map!.GetTile(originX + tile.X, originY + tile.Y);
+            target.GroundSprite = tile.GroundSprite;
+            target.ForegroundSprite = tile.ForegroundSprite;
+            target.Item = tile.Item;
+            target.Character = tile.Character;
+            target.Flags.Clear();
+            foreach (var flag in tile.Flags ?? []) target.Flags.Add(flag);
+        }
+
+        var after = Enumerable.Range(0, region.Height)
+            .SelectMany(row => Enumerable.Range(0, region.Width)
+                .Select(column => TileSnapshot.Capture(map!.GetTile(originX + column, originY + row))))
+            .ToList();
+        undoStack.Push(new TileChange(before, after));
+        redoStack.Clear();
+        SelectTiles(RectanglePoints(new Point(originX, originY), new Point(originX + region.Width - 1, originY + region.Height - 1)), "pasted region");
+        UpdateStatus();
+        status.Text = $"Pasted {region.Width}x{region.Height} region as a full overwrite. Ctrl+Z undoes the whole paste.";
+    }
+
+    private void CutSelectedRegion()
+    {
+        if (!RequireEditable() || selectedTiles.Count == 0) return;
+        var region = CaptureSelectedRegion();
+        if (region is null) return;
+        var originX = selectedTiles.Min(tile => tile.X);
+        var originY = selectedTiles.Min(tile => tile.Y);
+        var points = RectanglePoints(new Point(originX, originY), new Point(originX + region.Width - 1, originY + region.Height - 1));
+        var before = points.Select(point => TileSnapshot.Capture(map!.GetTile(point.X, point.Y))).ToList();
+        foreach (var point in points) map!.GetTile(point.X, point.Y).Clear();
+        var after = points.Select(point => TileSnapshot.Capture(map!.GetTile(point.X, point.Y))).ToList();
+        copiedRegion = region;
+        copiedTile = null;
+        copiedSprite = null;
+        undoStack.Push(new TileChange(before, after));
+        redoStack.Clear();
+        canvas.RefreshTile();
+        UpdateStatus();
+        status.Text = $"Cut {region.Width}x{region.Height} region to the local clipboard. Select a destination and press Ctrl+V to move it; Ctrl+Z undoes the cut.";
+    }
+
+    private static void ValidateRegion(MapRegionClipboard region)
+    {
+        if (region.Width is < 1 or > 256 || region.Height is < 1 or > 256 || region.Tiles is null)
+            throw new InvalidDataException("The region dimensions or tile list are invalid.");
+        if (region.Tiles.Count != region.Width * region.Height)
+            throw new InvalidDataException("The region must contain every tile, including empty tiles.");
+        var coordinates = new HashSet<Point>();
+        foreach (var tile in region.Tiles)
+        {
+            if (tile.X < 0 || tile.X >= region.Width || tile.Y < 0 || tile.Y >= region.Height || !coordinates.Add(new Point(tile.X, tile.Y)))
+                throw new InvalidDataException("The region contains an invalid or duplicate tile coordinate.");
+        }
     }
 
     private void ClearSelectedRegion()
@@ -566,7 +987,46 @@ internal sealed class MainForm : Form
             undoStack.Push(new TileChange(before, after));
         }
         var committedTiles = targets.Length;
-        freeDrawTiles.Clear(); canvas.ClearPreview(); canvas.RefreshTile(); ShowDetails(map!.GetTile((int)x.Value, (int)y.Value)); status.Text = $"Committed {committedTiles:N0} Free Draw tile(s)."; UpdateStatus();
+        freeDrawTiles.Clear(); canvas.ClearPreview(); canvas.RefreshTile();
+        var selectedTile = map!.GetTile((int)x.Value, (int)y.Value);
+        LoadTile(selectedTile);
+        ShowDetails(selectedTile);
+        status.Text = $"Committed {committedTiles:N0} tile(s).";
+        UpdateStatus();
+    }
+
+    private void DeleteSelectedSprites() => MutateSelectedTiles("Deleted sprites", tile =>
+    {
+        tile.GroundSprite = 0;
+        tile.ForegroundSprite = 0;
+    });
+
+    private void RemoveSelectedNpcs() => MutateSelectedTiles("Removed NPCs", tile => tile.Character = null);
+
+    private void ClearSelectedFlags() => MutateSelectedTiles("Cleared flags", tile => tile.Flags.Clear());
+
+    private void MutateSelectedTiles(string operation, Action<MapTile> mutate)
+    {
+        if (!RequireEditable()) return;
+        var targets = GetEditTargets();
+        var before = targets.Select(point => TileSnapshot.Capture(map!.GetTile(point.X, point.Y))).ToList();
+        foreach (var point in targets) mutate(map!.GetTile(point.X, point.Y));
+        var after = targets.Select(point => TileSnapshot.Capture(map!.GetTile(point.X, point.Y))).ToList();
+        if (before.Zip(after).All(pair => pair.First.Matches(pair.Second)))
+        {
+            status.Text = $"{operation}: no matching data on the selected tile(s).";
+            return;
+        }
+        undoStack.Push(new TileChange(before, after));
+        redoStack.Clear();
+        freeDrawTiles.Clear();
+        canvas.ClearPreview();
+        canvas.RefreshTile();
+        var selectedTile = map!.GetTile((int)x.Value, (int)y.Value);
+        LoadTile(selectedTile);
+        ShowDetails(selectedTile);
+        UpdateStatus();
+        status.Text = $"{operation} on {targets.Length:N0} tile(s). Ctrl+Z undoes this change.";
     }
 
     private void PreviewEdit()
@@ -810,7 +1270,7 @@ internal sealed class MainForm : Form
                 var image = canvas.Sprites.Get(id);
                 if (image is null) continue;
                 var tile = new Panel { Width = 96, Height = 112, Margin = new Padding(4), BackColor = Color.FromArgb(34, 36, 42), Tag = id };
-                var preview = new PictureBox { Width = 96, Height = 84, SizeMode = PictureBoxSizeMode.CenterImage, Image = image.Bitmap, Cursor = Cursors.Hand, Tag = id, BackColor = Color.FromArgb(18, 20, 24) };
+                var preview = new PictureBox { Width = 96, Height = 84, SizeMode = PictureBoxSizeMode.CenterImage, Image = image.Bitmap, Cursor = Cursors.Hand, Tag = id, BackColor = Color.FromArgb(18, 20, 24), TabStop = true };
                 var label = new Label { Text = id.ToString(), Dock = DockStyle.Bottom, ForeColor = Color.White, TextAlign = ContentAlignment.MiddleCenter, Height = 24 };
                 var dragOrigin = Point.Empty;
                 preview.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left) dragOrigin = e.Location; };
@@ -822,7 +1282,7 @@ internal sealed class MainForm : Form
                         preview.DoDragDrop(id.ToString(), DragDropEffects.Copy);
                     }
                 };
-                preview.Click += (_, _) => SelectBrowserSprite(id);
+                preview.Click += (_, _) => { preview.Focus(); SelectBrowserSprite(id); };
                 preview.DoubleClick += (_, _) => SelectBrowserSprite(id);
                 tile.Controls.Add(preview); tile.Controls.Add(label); spriteGallery.Controls.Add(tile);
             }
@@ -980,7 +1440,7 @@ internal sealed class MainForm : Form
         using var dialog = new NpcBuildDraftForm(characterTemplates, selectedTemplate, canvas.Sprites, characterSprites.Values);
         dialog.ShowDialog(this);
     }
-    private void ShowTiles(IEnumerable<MapTile> tiles, string kind) { results.Items.Clear(); foreach (var tile in tiles.OrderBy(t => t.Y).ThenBy(t => t.X)) results.Items.Add(new Result(kind, tile)); centerTabs.SelectedIndex = 1; status.Text = $"{results.Items.Count:N0} {kind} matches. Click one to select it on the canvas."; }
+    private void ShowTiles(IEnumerable<MapTile> tiles, string kind) { results.Items.Clear(); foreach (var tile in tiles.OrderBy(t => t.Y).ThenBy(t => t.X)) results.Items.Add(new Result(kind, tile)); centerTabs.SelectedTab = resultsPage; status.Text = $"{results.Items.Count:N0} {kind} matches. Click one to select it on the map tab."; }
 
     private void ValidateMap()
     {
@@ -1013,14 +1473,20 @@ internal sealed class MainForm : Form
     {
         using var dialog = new FolderBrowserDialog { Description = "Choose a compatible pak art folder (the folder containing 00000000.pak)" };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        try { canvas.Sprites = new SpriteArchive(dialog.SelectedPath); UpdateStatus(); }
+        try
+        {
+            spriteArchive = new SpriteArchive(dialog.SelectedPath);
+            foreach (var workspace in workspaces.Values) workspace.Canvas.Sprites = spriteArchive;
+            canvas.Sprites = spriteArchive;
+            UpdateStatus();
+        }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "Could not load art assets", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 
     private void TryLoadDefaultSpriteArchive()
     {
         var defaultPak = @"C:\Astonia\Astonia Uncharted\Legacy Source CODE\Astonia3 Map Editor\Astonia3 Editor\pak";
-        if (Directory.Exists(defaultPak)) canvas.Sprites = new SpriteArchive(defaultPak);
+        if (Directory.Exists(defaultPak)) spriteArchive = new SpriteArchive(defaultPak);
     }
 
     private static string? FindCurrentServerZones()
@@ -1042,7 +1508,19 @@ internal sealed class MainForm : Form
     private void LoadProfile() { using var dialog = new OpenFileDialog { Filter = "Map profile (*.json)|*.json" }; if (dialog.ShowDialog(this) != DialogResult.OK) return; try { SetProfile(ServerMapProfile.Load(dialog.FileName)); } catch (Exception ex) { MessageBox.Show(this, ex.Message, "Could not load profile"); } }
     private void SaveProfile() { if (profile is null) return; using var dialog = new SaveFileDialog { Filter = "Map profile (*.json)|*.json", FileName = "server3-map-profile.json" }; if (dialog.ShowDialog(this) == DialogResult.OK) profile.Save(dialog.FileName); }
     private void TryDetectProfile(string mapPath) { var directory = new DirectoryInfo(Path.GetDirectoryName(mapPath)!); while (directory.Parent is not null) { if (directory.Name.Equals("zones", StringComparison.OrdinalIgnoreCase)) { try { SetProfile(ServerMapProfile.Generate(directory.Parent.FullName)); } catch { } return; } directory = directory.Parent; } }
-    private void SetProfile(ServerMapProfile value) { profile = value; flagSearch.Items.Clear(); editFlags.Items.Clear(); foreach (var flag in value.AuthorableFlags.OrderBy(f => f)) { flagSearch.Items.Add(flag); editFlags.Items.Add(flag); } UpdateStatus(); }
+    private void SetProfile(ServerMapProfile value) { profile = value; if (activeWorkspace is not null) activeWorkspace.Profile = value; PopulateProfileLists(); UpdateStatus(); }
+
+    private void PopulateProfileLists()
+    {
+        flagSearch.Items.Clear();
+        editFlags.Items.Clear();
+        if (profile is null) return;
+        foreach (var flag in profile.AuthorableFlags.OrderBy(flag => flag))
+        {
+            flagSearch.Items.Add(flag);
+            editFlags.Items.Add(flag);
+        }
+    }
 
     private void LoadTemplates(string zoneDirectory)
     {
@@ -1133,10 +1611,26 @@ internal sealed class MainForm : Form
     private static TextBox ReadOnlyTextBox() => new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both, Font = new Font(FontFamily.GenericMonospace, 9) };
     private static TabPage Tab(string title, Control control) { var page = new TabPage(title); page.Controls.Add(control); return page; }
     private static Control Button(string text, EventHandler handler) { var button = new Button { Text = text, AutoSize = true, Dock = DockStyle.Bottom }; button.Click += handler; return button; }
+    private static Control ToolbarButton(string text, EventHandler handler) { var button = new Button { Text = text, AutoSize = true }; button.Click += handler; return button; }
     private static Panel PanelWith(string title, params Control[] controls) { var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(6) }; panel.Controls.Add(new Label { Text = title, Dock = DockStyle.Top, Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold), Height = 22 }); foreach (var control in controls.Reverse()) panel.Controls.Add(control); return panel; }
     private static bool TryParseRange(string input, out uint low, out uint high) { var parts = input.Trim().Split('-', 2, StringSplitOptions.TrimEntries); low = high = 0; return uint.TryParse(parts[0], out low) && (parts.Length == 1 || uint.TryParse(parts[1], out high)) && low <= high; }
     private sealed record Result(string Kind, MapTile Tile) { public override string ToString() => $"({Tile.X,3},{Tile.Y,3}) gs={Tile.GroundSprite,-10} fs={Tile.ForegroundSprite,-10} {Kind}"; }
     private sealed record TileChange(IReadOnlyList<TileSnapshot> Before, IReadOnlyList<TileSnapshot> After);
+    private sealed record SpriteClipboard(uint Sprite, int Layer);
+    private sealed class MapWorkspace(MapDocument map, ServerMapProfile? profile, HashSet<Point> selectedTiles, HashSet<Point> freeDrawTiles, Stack<TileChange> undoStack, Stack<TileChange> redoStack, MapCanvas canvas)
+    {
+        public MapDocument Map { get; set; } = map;
+        public ServerMapProfile? Profile { get; set; } = profile;
+        public MapCanvas Canvas { get; } = canvas;
+        public HashSet<Point> SelectedTiles { get; set; } = selectedTiles;
+        public HashSet<Point> FreeDrawTiles { get; set; } = freeDrawTiles;
+        public Stack<TileChange> UndoStack { get; set; } = undoStack;
+        public Stack<TileChange> RedoStack { get; set; } = redoStack;
+        public int X { get; set; }
+        public int Y { get; set; }
+        public int Width { get; set; } = 1;
+        public int Height { get; set; } = 1;
+    }
     private sealed class MapRegionClipboard
     {
         public int Width { get; set; }
