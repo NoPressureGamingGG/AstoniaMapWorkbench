@@ -12,4 +12,4 @@ Before opening a pull request:
 4. Update `docs/USER_GUIDE.md` when controls or behavior change.
 5. Include a reproduction map description and screenshots for rendering changes.
 
-Server 3.5 work belongs in the shared compatibility lane. Do not silently label a change 3.5-compatible without opening representative 3.5 maps and testing the resulting output in the 3.5 runtime.
+The shared core `.map` directives and profile generation are supported for Server 3.5S. Other 3.5 behavior (including client assets, template differences, and runtime compatibility) is not fully verified; test those separately and state their limits clearly.

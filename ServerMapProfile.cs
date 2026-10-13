@@ -22,17 +22,26 @@ internal sealed record ServerMapProfile(
 
     public static ServerMapProfile Generate(string serverRoot)
     {
-        var create = Path.Combine(serverRoot, "create.c");
-        if (!File.Exists(create)) throw new FileNotFoundException("This folder does not contain Server 3 create.c.", create);
+        var requestedRoot = Path.GetFullPath(serverRoot);
+        var root = Path.GetFileName(requestedRoot).Equals("src", StringComparison.OrdinalIgnoreCase)
+            ? Directory.GetParent(requestedRoot)?.FullName ?? requestedRoot
+            : requestedRoot;
+        var create = Path.Combine(root, "create.c");
+        var isServer35 = false;
+        if (!File.Exists(create))
+        {
+            create = Path.Combine(root, "src", "create.c");
+            isServer35 = File.Exists(create);
+        }
+        if (!File.Exists(create)) throw new FileNotFoundException("This folder does not contain Server 3.0S create.c or Server 3.5S src\\create.c.", create);
         var source = File.ReadAllText(create);
         var table = Regex.Match(source, @"static\s+char\s+\*MF_tab\[\]\s*=\s*\{(?<body>.*?)\};", RegexOptions.Singleline);
-        if (!table.Success) throw new InvalidDataException("Could not find Server 3's MF_tab map-flag table in create.c.");
+        if (!table.Success) throw new InvalidDataException("Could not find the server's MF_tab map-flag table in create.c.");
         var flags = Regex.Matches(table.Groups["body"].Value, "\"(?<flag>MF_[A-Z0-9_]+)\"")
             .Select(match => match.Groups["flag"].Value).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        if (flags.Count == 0) throw new InvalidDataException("Server 3's MF_tab did not contain map flags.");
-        var root = Path.GetFullPath(serverRoot);
+        if (flags.Count == 0) throw new InvalidDataException("The server's MF_tab did not contain map flags.");
         return new ServerMapProfile(
-            "Server 3 map profile",
+            isServer35 ? "Server 3.5S map profile" : "Server 3.0S map profile",
             root,
             GetRevision(root),
             DateTimeOffset.UtcNow,
@@ -51,6 +60,8 @@ internal sealed record ServerMapProfile(
 
     private static string GetRevision(string serverRoot)
     {
+        var gitMetadata = Path.Combine(serverRoot, ".git");
+        if (!Directory.Exists(gitMetadata) && !File.Exists(gitMetadata)) return "unversioned";
         try
         {
             using var process = Process.Start(new ProcessStartInfo("git", $"-C \"{serverRoot}\" rev-parse --short HEAD")

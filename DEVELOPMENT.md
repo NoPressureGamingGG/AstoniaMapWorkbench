@@ -13,7 +13,6 @@ credentials, generated output or local handoffs. Stable/main promotion retains
 the behavior-testing requirements below. No server deployment is authorized by
 publishing this editor. See docs/TESTING_PREVIEW.md for this snapshot's gates.
 
-
 ## Local workflow
 
 1. Make a focused change.
@@ -58,4 +57,4 @@ Do not push unfinished experiments. Keep them local or in a branch until the beh
 
 ## Server 3.5 lane
 
-Server 3.5 compatibility work stays in this repository under a separate adapter/profile lane. It must not be called supported until representative 3.5 maps open, validate, save, and are tested in the 3.5 runtime.
+The Workbench currently loads, edits, and saves the shared core `.map` directives used by Server 3.0S and 3.5S, and can generate a map-flag profile from either checkout. Full 3.5 compatibility is still unverified until its client assets, template differences, and runtime behavior have been tested. Keep those claims separate when documenting or releasing changes.

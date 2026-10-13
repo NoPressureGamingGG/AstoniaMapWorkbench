@@ -2,10 +2,12 @@
 
 This preview is for collecting tester feedback on the map editor. It includes
 multi-map tabs and copy/paste, tile stamping, direct delete/clear actions,
-the tutorial, NPC draft form, sprite browser, wall-family filtering and depth
-sorting. The local Release build and self-contained win-x64 publish passed with
-zero warnings and errors; confirm the GitHub Actions build succeeds before
-downloading. Some interactions still need tester verification. No server
+the tutorial, NPC draft form, sprite browser, wall-family filtering, depth
+sorting, and Server 3.5S core map loading/profile support. The local Release
+build and self-contained win-x64 publish passed with zero warnings and errors.
+All 30 maps in the available 3.5S checkout parsed, and one map passed a
+save/reopen check. Confirm the GitHub Actions build succeeds before downloading.
+3.5 client assets, templates, and runtime behavior are not certified. No server
 deployment; no private client/server assets or maps bundled.
 
 ## Obtain and report
@@ -28,6 +30,7 @@ Do not attach private assets, credentials or database/runtime data.
 - Four-layer details and 21006/21007 cut-preview behavior: ground sprites do not use foreground cut rules; Workbench preview is not proof of exact live client behavior.
 - Depth ordering of foreground, items and characters; NPC draft sprite/help/save workflow.
 - Validate, save to a separate test copy, reopen and compare intended edits. Never use a sole copy of valuable map work to test a preview.
+- Open a Server 3.5S map; confirm the status identifies the 3.5S profile, then save a separate copy and reopen it. Runtime/client compatibility is outside this preview's verification.
 
 No claim that every check above passed. Known pending audit findings must be
 recorded before stable promotion. Updater/API installation design is only a

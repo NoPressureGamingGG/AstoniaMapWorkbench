@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Support Server 3.5S map loading and checkout-specific validation profiles from `src/create.c`; identify 3.5 maps in the source status and Open dialog.
 - Add canvas-focused Ctrl+C/Ctrl+V region copy and full-overwrite paste, including blank tiles, with one-step undo; route shortcuts through the focused canvas and improve high-contrast ground-grid selection outlines over walls.
 - Add a local sprite clipboard so a selected Sprite Browser sprite can be placed directly on the selected map tiles with Ctrl+C/Ctrl+V; add undoable region cut/move; correctly load signed wall cut offsets without aborting later metadata.
 - Open up to four maps in independent tabs with per-map selection, pending brush preview, validation profile, and undo/redo history; share the in-memory region clipboard across tabs.

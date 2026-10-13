@@ -146,7 +146,7 @@ internal sealed class MainForm : Form
         edit.DropDownItems.Add(new ToolStripSeparator()); edit.DropDownItems.Add(undoCommand); edit.DropDownItems.Add(redoCommand);
         menu.Items.Add(edit);
         var profiles = new ToolStripMenuItem("Server profile");
-        profiles.DropDownItems.Add("Generate from Server 3 checkout...", null, (_, _) => GenerateProfile());
+        profiles.DropDownItems.Add("Generate from Server checkout...", null, (_, _) => GenerateProfile());
         profiles.DropDownItems.Add("Load profile...", null, (_, _) => LoadProfile());
         profiles.DropDownItems.Add("Save active profile...", null, (_, _) => SaveProfile());
         menu.Items.Add(profiles); menu.Items.Add(new ToolStripMenuItem("Validate", null, (_, _) => ValidateMap())); MainMenuStrip = menu;
@@ -323,7 +323,7 @@ internal sealed class MainForm : Form
 
     private void OpenMap()
     {
-        using var dialog = new OpenFileDialog { Filter = "Server 3 map (*.map)|*.map", Title = "Open current or legacy Server 3 map" };
+        using var dialog = new OpenFileDialog { Filter = "Server map (*.map)|*.map", Title = "Open Server 3.0S or 3.5S map" };
         var currentZones = FindCurrentServerZones();
         if (currentZones is not null) dialog.InitialDirectory = currentZones;
         if (dialog.ShowDialog(this) == DialogResult.OK) OpenMap(dialog.FileName);
@@ -1491,20 +1491,29 @@ internal sealed class MainForm : Form
 
     private static string? FindCurrentServerZones()
     {
-        var zones = @"C:\Astonia\Astonia Uncharted\AU 3.0S\astonia_community_server3-main\zones";
-        return Directory.Exists(zones) ? zones : null;
+        var zones = new[]
+        {
+            @"C:\Astonia\Astonia Uncharted\AU 3.0S\astonia_community_server3-main\zones",
+            @"C:\Astonia\Astonia Uncharted\AU 3.5S\astonia_community_server35-main\zones"
+        };
+        return zones.FirstOrDefault(Directory.Exists);
     }
 
     private string MapSourceLabel()
     {
         if (map is null) return "none";
+        if (profile is not null)
+        {
+            var zoneRoot = Path.GetFullPath(profile.ZoneRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (Path.GetFullPath(map.SourcePath).StartsWith(zoneRoot, StringComparison.OrdinalIgnoreCase))
+                return profile.Name.Contains("3.5S", StringComparison.OrdinalIgnoreCase) ? "CURRENT SERVER 3.5S" : "CURRENT SERVER 3";
+        }
         var path = map.SourcePath.Replace('/', '\\');
-        if (path.Contains(@"\AU 3.0S\astonia_community_server3-main\zones\", StringComparison.OrdinalIgnoreCase)) return "CURRENT SERVER 3";
         if (path.Contains(@"\Astonia3 Map Editor\Astonia3 Editor\zones\", StringComparison.OrdinalIgnoreCase)) return "LEGACY EDITOR DATA";
         return "EXTERNAL MAP";
     }
 
-    private void GenerateProfile() { using var dialog = new FolderBrowserDialog { Description = "Choose the authoritative Server 3 checkout" }; if (dialog.ShowDialog(this) != DialogResult.OK) return; try { SetProfile(ServerMapProfile.Generate(dialog.SelectedPath)); } catch (Exception ex) { MessageBox.Show(this, ex.Message, "Could not generate profile"); } }
+    private void GenerateProfile() { using var dialog = new FolderBrowserDialog { Description = "Choose a Server 3.0S or 3.5S checkout (or the 3.5S src folder)" }; if (dialog.ShowDialog(this) != DialogResult.OK) return; try { SetProfile(ServerMapProfile.Generate(dialog.SelectedPath)); } catch (Exception ex) { MessageBox.Show(this, ex.Message, "Could not generate profile"); } }
     private void LoadProfile() { using var dialog = new OpenFileDialog { Filter = "Map profile (*.json)|*.json" }; if (dialog.ShowDialog(this) != DialogResult.OK) return; try { SetProfile(ServerMapProfile.Load(dialog.FileName)); } catch (Exception ex) { MessageBox.Show(this, ex.Message, "Could not load profile"); } }
     private void SaveProfile() { if (profile is null) return; using var dialog = new SaveFileDialog { Filter = "Map profile (*.json)|*.json", FileName = "server3-map-profile.json" }; if (dialog.ShowDialog(this) == DialogResult.OK) profile.Save(dialog.FileName); }
     private void TryDetectProfile(string mapPath) { var directory = new DirectoryInfo(Path.GetDirectoryName(mapPath)!); while (directory.Parent is not null) { if (directory.Name.Equals("zones", StringComparison.OrdinalIgnoreCase)) { try { SetProfile(ServerMapProfile.Generate(directory.Parent.FullName)); } catch { } return; } directory = directory.Parent; } }

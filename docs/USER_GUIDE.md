@@ -1,6 +1,6 @@
 # Astonia Map Workbench User Guide
 
-The Workbench is a local Windows editor for Server 3 map files. It reads map data and legacy sprite art for editing and review. It does not connect to a running area server, upload files, restart processes, or change the live client.
+The Workbench is a local Windows editor for Server 3.0S and Server 3.5S map files. It reads map data and compatible sprite art for editing and review. It does not connect to a running area server, upload files, restart processes, or change the live client.
 
 ## Launch
 
@@ -19,9 +19,11 @@ On first launch, a skippable **Map Editing Tutorial** opens beside the editor. I
 ## Open a map
 
 1. Choose **File > Open map...**.
-2. Select a Server 3 `.map` file, normally under `zones/<area>/`.
+2. Select a Server 3.0S or 3.5S `.map` file, normally under `zones/<area>/`.
 3. The editor loads nearby `.chr` and `.itm` template names for validation.
-4. If the map is inside a Server 3 checkout, the editor attempts to detect that checkout and build a profile automatically.
+4. If the map is inside a Server 3.0S or 3.5S checkout, the editor attempts to detect that checkout and build a profile automatically.
+
+The core `.map` directives used by both server lines load through the same parser. All 30 `.map` files in the available Server 3.5S checkout were checked against the parser's supported directive names. This enables opening and editing those map files, but does not certify every 3.5 client asset, template, or runtime behavior.
 
 Use **File > Open recent maps** to reopen one of the three most recently opened maps. The list is remembered between launches and skips files that have been moved or deleted; hover an entry to see its full path.
 
@@ -32,16 +34,17 @@ Maps containing comments or directives that the editor cannot preserve open in *
 The Workbench is stored under `Legacy Source CODE` for historical/project-organization reasons. That location does not decide which map is edited. The map source is shown in the status bar after opening:
 
 - **CURRENT SERVER 3:** `AU 3.0S/astonia_community_server3-main/zones/<area>/...` and the recommended authoring source;
+- **CURRENT SERVER 3.5S:** `AU 3.5S/astonia_community_server35-main/zones/<area>/...`;
 - **LEGACY EDITOR DATA:** `Legacy Source CODE/Astonia3 Map Editor/Astonia3 Editor/zones/...`, useful for comparison only;
 - **EXTERNAL MAP:** any other path, which requires an explicit review before deployment.
 
-The Open dialog starts in the current Server 3 `zones` folder when this workspace path exists. The default `pak` folder is legacy art data only; it supplies compatible sprite pixels and does not make the opened map a legacy map. Saving never updates either checkout automatically: save to a workspace path, review the diff, then deliberately promote it into the current Server 3 checkout.
+The Open dialog starts in the current Server 3.0S `zones` folder, or the Server 3.5S folder if 3.0S is not present at its standard workspace path. The default `pak` folder is legacy art data only; it supplies compatible sprite pixels and does not make the opened map a legacy map. Saving never updates either checkout automatically: save to a workspace path, review the diff, then deliberately promote it into the matching server checkout.
 
 ## Server profile: what it means
 
-A server profile is a local JSON description of the Server 3 map rules used for validation. It contains:
+A server profile is a local JSON description of the selected server's map rules used for validation. It contains:
 
-- the Server 3 checkout path and detected Git revision;
+- the server checkout path and detected Git revision;
 - supported map directives such as `field`, `origin`, `from`, `to`, `gsprite`, `fsprite`, `flag`, `ch`, and `it`;
 - authorable static map flags;
 - runtime-managed flags that should not be authored into a static map;
@@ -49,13 +52,13 @@ A server profile is a local JSON description of the Server 3 map rules used for 
 
 ### Generate a profile
 
-Choose **Server profile > Generate from Server 3 checkout...** and select the authoritative Server 3 repository containing `create.c`. The editor reads the `MF_tab` flag table from that checkout and records the current Git revision. Use this when the server source has changed or when starting work against a different checkout.
+Choose **Server profile > Generate from Server checkout...** and select the authoritative Server 3.0S or Server 3.5S checkout. For 3.0S, select the repository root containing `create.c`; for 3.5S, select its root (or its `src` folder containing `create.c`). The editor reads that checkout's `MF_tab` flag table, records the revision, and uses its `zones` directory to load nearby templates. Profiles are detected automatically when a map is opened from within a recognized checkout.
 
 ### Load a profile
 
 Choose **Server profile > Load profile...** and select a previously saved `*.json` profile. Loading only changes the editor's validation rules and flag list. It does not connect to that server, read its live state, modify its files, or restart an area.
 
-A profile can become stale if the Server 3 source changes. Generate a new profile from the authoritative checkout when the profile revision no longer matches the map's target server.
+A profile can become stale if the server source changes. Generate a new profile from the authoritative checkout when the profile revision no longer matches the map's target server.
 
 ### Save a profile
 

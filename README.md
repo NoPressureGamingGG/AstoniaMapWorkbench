@@ -1,6 +1,6 @@
 # Astonia Map Workbench
 
-**Tester preview — 2026-10-03.** This branch contains work awaiting interactive acceptance and independent audit. Use copied/staged maps, report bugs through GitHub Issues, and read [preview test scope](docs/TESTING_PREVIEW.md). Successful compilation does not certify map/save or visual behavior.
+**Tester preview — 2026-10-13.** This branch contains work awaiting broader interactive acceptance and independent audit. Use copied/staged maps, report issues through GitHub Issues, and read [preview test scope](docs/TESTING_PREVIEW.md). The Server 3.5S core map format is tested; other 3.5 runtime and asset behavior is not certified.
 
 A local Windows map editor and review tool for Astonia-compatible Server 3 map data.
 
@@ -8,8 +8,8 @@ The Workbench is designed to be useful without access to a live server. It opens
 
 ## Status
 
-- **Server 3:** active development target.
-- **Server 3.5:** planned compatibility lane; not yet supported or runtime-tested.
+- **Server 3.0S:** active development target.
+- **Server 3.5S:** map loading/editing for the shared core `.map` directives and checkout-specific map-flag profiles are supported. Client-art rendering, template differences, and runtime behavior are not fully verified.
 - **Live server changes:** never performed automatically.
 
 The current editor can be tested from the Release build after running:
@@ -42,6 +42,6 @@ Do not attach credentials, database dumps, runtime logs containing private data,
 
 ## Compatibility roadmap
 
-Server 3 is the current lane. Server 3.5 should share the same application and receive a separate profile/asset adapter rather than a fork. The planned adapter must account for its source layout, flag table, client assets, and any map/template differences before 3.5 is advertised as supported.
+Server 3.0S and 3.5S map files use the same core `.map` directives in their current server sources, and the Workbench loads those maps and generates profiles from either checkout layout. Broader 3.5 compatibility still requires verifying its client assets, templates, and runtime-specific behavior before those features are advertised as supported.
 
 The [user guide](docs/USER_GUIDE.md) in this repository is the canonical, publicly updated Workbench guide. Every user-facing control or workflow change must update it in the same commit as the code.
